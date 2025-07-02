@@ -7,13 +7,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+// typical call should have at least 3 argv members: "assembler", input file, and output directory
+const int BASE_NUM_ARGS = 3;
+
 ArgumentParser::ArgumentParser(int &argc, char** argv){
     if(argc == 1){
         this->args.insert({"command", "--help"});
     }else if(argc==2 && !std::strcmp(*(argv + 1), "--help")){
         this->args.insert({"command", "--help"});
-    // typical call should have at least 3 argv members: "assembler", input file, and output directory
-    }else if (argc <= 2){
+    }else if (argc < BASE_NUM_ARGS){
         throw std::invalid_argument("Missing at least one required argument (input file output directory)");
     }else{
         // add the rest of the command-line options to map of args
@@ -21,7 +23,7 @@ ArgumentParser::ArgumentParser(int &argc, char** argv){
         this->args.insert({"--input", *(argv + 1)});
         this->args.insert({"-o", *(argv + 2)});
 
-        int i{3};
+        int i{BASE_NUM_ARGS};
         int prev_opt_index{-1};
         while (*(argv + i) != 0){
             // check if this is an option by looking for '-' prefix
@@ -30,32 +32,34 @@ ArgumentParser::ArgumentParser(int &argc, char** argv){
                 if (prev_opt_index != -1){
                     // check whether they specified arguments after flag
                     if (prev_opt_index == i - 1){
-                        throw std::invalid_argument("Must specify option after flag " + std::string(*(argv + prev_opt_index)));
+                        this->args.insert({*(argv + prev_opt_index), "true"});
+                    }else{
+                        // if valid, add options to argument map
+                        std::string opts{*(argv + prev_opt_index + 1)};
+                        for (int k{BASE_NUM_ARGS}; prev_opt_index + k < i; k++){
+                            opts += ",";
+                            opts += *(argv + prev_opt_index + k);
+                        }
+                        this->args.insert({*(argv + prev_opt_index), opts});
                     }
-                    // if valid, add options to argument map
-                    std::string opts{*(argv + prev_opt_index + 1)};
-                    for (int k{3}; prev_opt_index + k < i; k++){
-                        opts += ",";
-                        opts += *(argv + prev_opt_index + k);
-                    }
-                    this->args.insert({*(argv + prev_opt_index), opts});
                 }
                 prev_opt_index = i;
             }
             i++;
         }
-        if (argc > 3){
+        if (argc > BASE_NUM_ARGS){
             // push final flag
             // check whether they specified arguments after flag
             if (prev_opt_index == i - 1){
-                throw std::invalid_argument("Must specify option after flag " + std::string(*(argv + prev_opt_index)));
+                this->args.insert({*(argv + prev_opt_index), "true"});
+            }else{
+                std::string opts{*(argv + prev_opt_index + 1)};
+                for (int k{2}; prev_opt_index + k < i; k++){
+                    opts += ",";
+                    opts += *(argv + prev_opt_index + k);
+                }
+                this->args.insert({*(argv + prev_opt_index), opts});
             }
-            std::string opts{*(argv + prev_opt_index + 1)};
-            for (int k{2}; prev_opt_index + k < i; k++){
-                opts += ",";
-                opts += *(argv + prev_opt_index + k);
-            }
-            this->args.insert({*(argv + prev_opt_index), opts});
         }
     }
 }
@@ -119,11 +123,17 @@ void ArgumentParser::set_options(dk_opt_t& asm_opt){
     if (this->args.count("--max-iterations") != 0){
         asm_opt.max_iterations = std::stoi(this->args["--max-iterations"]);
     }
+
+    if (this->args.count("-v") != 0){
+        asm_opt.verbose = true;
+    }
 }
 
 void print_help(){
     std::cout << "Usage: [input.fq] [output directory] <flags>" << std::endl;
     std::cout << "Options:\n";
+    std::cout << "  General:\n";
+    std::cout << "    -v                verbose mode with logging statements\n";
     std::cout << "  Sketching:\n";
     std::cout << "    -s                s value when selecting syncmers\n";
     std::cout << "  Graph growth:\n";

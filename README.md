@@ -10,6 +10,8 @@ deknot [input.fq] [output directory] <flags>
 
 <a name="parameters"></a>
 ## Parameters
+### General
+* `-v`: verbose mode with logging statements
 ### Sketching
 * `-s`: s value when selecting syncmers
 ### Graph growth
