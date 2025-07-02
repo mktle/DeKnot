@@ -1,0 +1,74 @@
+#ifndef GRAPH_H
+#define GRAPH_H
+
+#include "deknot.h"
+#include "node.h"
+#include "span.h"
+#include "syncmer.h"
+#include "unitig.h"
+#include "utils.h"
+#include "xxhash.h"
+
+#include <ankerl/unordered_dense.h>
+#include <vector>
+
+class Graph {
+    public:
+        Graph(int set_k_prime);
+        ~Graph();
+        int get_k_prime();
+        void set_k_prime(int set_val);
+        int num_nodes();
+        int num_unitigs();
+        bool check_sequence(std::vector<uint64_t>& kmer_list, size_t check_k_prime, int& min_span);
+        bool add_sequence(SketchedSeq& input_seq, Graph* prev_graph);
+        bool add_connection(KmerView& first, char first_orient, KmerView& second, char second_orient);
+
+        Unitig* split_unitig(Unitig* to_split, Node* breakpoint);
+        void merge_unitigs(Node* first_node, Node* second_node);
+        int next_node_id();
+        int next_unitig_id();
+
+        void increment_k_min_mer_count(int increment, KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx);
+        void increment_unitig(int increment, Unitig* to_increment);
+        int k_plus_one_mer_count(Span<uint64_t>& k_syncmer);
+        void destroy_unitig(Unitig* to_remove);
+        void destroy_node(Node* to_remove);
+        void add_node_to_list(Node* new_node);
+        void add_unitig_to_list(Unitig* new_utg);
+        void create_unitig_for_node(Node* node);
+
+        void remove_floaters(int threshold);
+        void trim_tips();
+        bool trim_low_freq_unitigs(int threshold);
+        bool trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>& sorted_list);
+        bool disconnect_unitig_end(Node* remove_node, Unitig* keep_utg, std::vector<Unitig*>& sorted_list);
+
+        void add_node_to_lookup_table(Node* to_add);
+        Node* get_node_from_lookup_table(KmerView& k_syncmer);
+
+        bool any_connected_unitigs();
+
+        void write_nodes_to_gfa(std::string& file_name, bool verbose);
+        void write_hpc_unitigs_to_gfa(std::string& file_name, bool verbose);
+        void free_unitig_if_empty(Unitig* to_check);
+        void print_nodes(bool verbose);
+        void print_unitigs(bool verbose, bool print_seq);
+        void get_all_hpc_seqs(std::vector<std::string>& hpc_seqs);
+        void add_unitigs_to_input(std::vector<SketchedSeq*>& input_seqs, int s);
+
+        void find_paths(std::vector<Unitig*> path1, std::vector<Unitig*> path2);
+        void path_to_sequence(std::vector<Unitig*> path, std::string& ret_string);
+
+        dk_graph_t* convert_to_gfa_representation();
+
+    private: std::vector<Node*> node_list;
+        int k_prime;
+        std::vector<int> node_free_list;
+        std::vector<Unitig*> unitig_list;
+        std::vector<int> unitig_free_list;
+
+        ankerl::unordered_dense::map<KmerView, Node*, utils::KmerViewHash, utils::KmerViewEqual> node_table;
+};
+
+#endif
