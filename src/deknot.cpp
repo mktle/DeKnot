@@ -1,6 +1,8 @@
 #include "deknot.h"
 #include "graph.h"
 
+#include <cassert>
+#include <cmath>
 #include <iostream>
 #include <fstream>
 #include <string>
