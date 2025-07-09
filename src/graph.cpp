@@ -548,23 +548,6 @@ bool Graph::disconnect_unitig_end(Node* remove_node, Unitig* keep_utg, std::vect
                         this->merge_unitigs(recipient, donor);
                         recipient->get_unitig()->update_median_freq();
                         compacted = true;
-                    }else{
-                        // this is a neighbor that was parallel to the dropped unitig
-                        // add the median frequency to each k-min-mer
-                        int median_int = (int)std::round(remove_utg->get_median_freq());
-                        this->increment_unitig(median_int, neigh_neighbors[j].neighbor->get_unitig());
-                        neigh_neighbors[j].neighbor->get_unitig()->update_median_freq();
-                    }
-                }
-            }else{
-                // can't compact, but still need to add to the frequencies of neighbors parallel to the dropped unitig
-                for (size_t j{0}; j < neigh_neighbors.size(); j++){
-                    if (neigh_neighbors[j].self_orientation == dropped_dir){
-                        // this is a neighbor that was parallel to the dropped unitig
-                        // add the median frequency to each k-min-mer
-                        int median_int = (int)std::round(remove_utg->get_median_freq());
-                        this->increment_unitig(median_int, neigh_neighbors[j].neighbor->get_unitig());
-                        neigh_neighbors[j].neighbor->get_unitig()->update_median_freq();
                     }
                 }
             }
