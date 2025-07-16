@@ -840,5 +840,6 @@ dk_graph_t* Graph::convert_to_gfa_representation(){
     }
     gfa_rep->edges = new dk_edge_t[edge_list.size()];
     std::memcpy(gfa_rep->edges, edge_list.data(), edge_list.size() * sizeof(dk_edge_t));
+    gfa_rep->n_edges = (int)edge_list.size();
     return gfa_rep;
 }
