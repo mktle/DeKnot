@@ -32,7 +32,7 @@ IntervalNode* IntervalTree::insert(IntervalNode* root, int lower_val, int upper_
     return root;
 }
 
-bool IntervalTree::overlap_search(IntervalNode* root, int search_l, int search_u) {
+bool IntervalTree::overlap_search(IntervalNode* root, int search_l, int search_u){
     if (root == NULL) return false;
     if (root->overlaps(search_l, search_u)) return true;
 
@@ -40,4 +40,11 @@ bool IntervalTree::overlap_search(IntervalNode* root, int search_l, int search_u
         return overlap_search(root->left, search_l, search_u);
     }
     return overlap_search(root->right, search_l, search_u);
+}
+
+void IntervalTree::destroy_tree(IntervalNode* root){
+    if (root == NULL) return;
+    destroy_tree(root->left);
+    destroy_tree(root->right);
+    delete root;
 }

@@ -10,6 +10,7 @@ class IntervalNode{
 };
 
 namespace IntervalTree{
-    IntervalNode* insert(IntervalNode *root, int lower, int upper);
+    IntervalNode* insert(IntervalNode* root, int lower, int upper);
     bool overlap_search(IntervalNode* root, int search_l, int search_u);
+    void destroy_tree(IntervalNode* root);
 }

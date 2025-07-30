@@ -7,7 +7,7 @@
 #include <fstream>
 #include <string>
 
-const int DEBUG_CHECKPOINTS[] = {966, 968, 1140, 1156, 1554, 1707, 1747, 1786, 1826, 1888};
+const int DEBUG_CHECKPOINTS[] = {1088, 1257};
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 
@@ -227,7 +227,6 @@ void dk_graph_free(dk_graph_t* to_free){
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose){
     std::vector<size_t> remove_list;
     // check the sequences to see if they should be removed (and also calculate jump length)
-    // actually add the sequences now
     int lowest_span {-1};
     for (size_t seq_idx {0}; seq_idx < input_sequences.size(); seq_idx++){
         int curr_span {-1};
@@ -245,10 +244,10 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
         k_prime += lowest_span - 1;
         dbg->set_k_prime(k_prime);
     }
+
     if (verbose){
         std::cout << "Lowest span: " << lowest_span << std::endl;
     }
-
     // actually add the sequences now
     for (size_t seq_idx {0}; seq_idx < input_sequences.size(); seq_idx++){
         //TODO: switch from linear search for index
