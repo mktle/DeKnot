@@ -43,6 +43,7 @@ class Node{
         uint64_t get_front_hash();
         uint64_t get_back_hash();
         bool neighbors_diff_utg();
+        int longest_neighbor_utg_length();
         const std::vector<Edge>& view_neighbors();
         bool is_tip();
         void get_hpc_sequence(std::string& ret_str, bool reverse);

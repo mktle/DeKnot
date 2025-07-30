@@ -35,7 +35,7 @@ class Unitig{
         void update_median_freq();
         void set_base_freq(float set_freq);
         bool is_floating();
-        Node* get_tip_inner_end(Unitig*& adj_utg);
+        Node* get_tip_inner_end(Node*& adj_node);
         char get_in_dir(Node* node_to_check);
 
         void list_nodes();

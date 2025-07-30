@@ -31,6 +31,7 @@ int main(int argc, char* argv[]){
         dk_opt_t asm_opt;
         dk_opt_init(&asm_opt);
         input.set_options(asm_opt);
+        asm_opt.out_dir = input.args["-o"].c_str();
 
         dk_graph_t* final_graph = dk_assemble_reads(&asm_opt, reads_arr, (int)read_seqs.size());
         if (final_graph == NULL) return 1;

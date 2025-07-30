@@ -138,6 +138,17 @@ bool Node::neighbors_diff_utg(){
     return false;
 }
 
+int Node::longest_neighbor_utg_length(){
+    int longest_length {0};
+    for (size_t i{0}; i < neighbors.size(); i++){
+        Unitig* neigh_utg = neighbors[i].neighbor->get_unitig();
+        if (neigh_utg != this->get_unitig() && neigh_utg->num_nodes() > longest_length){
+            longest_length = neigh_utg->num_nodes();
+        }
+    }
+    return longest_length;
+}
+
 KmerView Node::get_kmer_view(){
     return this->ksyncmer;
 }

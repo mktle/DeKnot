@@ -413,10 +413,13 @@ void Graph::trim_tips(){
 
         while(sorted_unitigs.size() > 0){
             Unitig* utg = sorted_unitigs.back();
-            Unitig* keep_utg;
-            Node* inner_end = utg->get_tip_inner_end(keep_utg);
+            Node* keep_node;
+            Node* inner_end = utg->get_tip_inner_end(keep_node);
             if (inner_end != NULL){
-                if (utg->get_median_freq() < 0.2 * keep_utg->get_median_freq()){
+                assert(keep_node != NULL);
+                Unitig* keep_utg = keep_node->get_unitig();
+                float len_thresh = (float)0.5 * (float)keep_node->longest_neighbor_utg_length();
+                if (utg->get_median_freq() < 0.2 * keep_utg->get_median_freq() || (float)utg->num_nodes() < len_thresh){
                     changed = true;
                     this->disconnect_unitig_end(inner_end, keep_utg, sorted_unitigs);
                     this->destroy_unitig(utg);
