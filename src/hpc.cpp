@@ -1,4 +1,5 @@
 #include "hpc.h"
+#include "interval_tree.h"
 
 #include <cassert>
 #include <cmath>
@@ -88,17 +89,21 @@ void hpc::align_single_read(std::vector<uint64_t>& kmer_list, ankerl::unordered_
     /*************************************************************************
      * Only add matches to tally for the unitig with the longest exact match *
      *************************************************************************/
+    IntervalNode* query_intervals = NULL;
     if (alignments.size() > 0){
         // sort by aligned length
         std::sort(alignments.begin(), alignments.end(), compareAlignedSegment);
-        int longest_match_utg_idx = alignments[0].utg_num;
         for (size_t i{0}; i < alignments.size(); i++){
             if (alignments[i].length < 150) break;
-            if (alignments[i].utg_num == longest_match_utg_idx){
-                hpc::add_to_hpc_tally(hp_lengths, hpc_tallies[(size_t)longest_match_utg_idx], alignments[i].utg_pos, alignments[i].read_pos, alignments[i].length, alignments[i].forward);
+            int read_start = alignments[i].read_pos;
+            int read_end = read_start + alignments[i].length - 1;
+            if (query_intervals == NULL || !IntervalTree::overlap_search(query_intervals, read_start, read_end)){
+                hpc::add_to_hpc_tally(hp_lengths, hpc_tallies[(size_t)alignments[i].utg_num], alignments[i].utg_pos, alignments[i].read_pos, alignments[i].length, alignments[i].forward);
+                IntervalTree::insert(query_intervals, read_start, read_end);
             }
         }
     }
+    IntervalTree::destroy_tree(query_intervals);
 }
 
 // return number of matching kmers
