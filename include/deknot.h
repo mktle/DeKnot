@@ -22,7 +22,7 @@ typedef struct {
     // set to non-zero value to return homopolymer compressed unitigs
     int return_hpc_utg;
     // directory to output intermediate graph files (NULL if none)
-    char* out_dir;
+    const char* out_dir;
     // non-zero value to print logging statements
     int verbose;
 } dk_opt_t;

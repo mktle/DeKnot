@@ -413,10 +413,13 @@ void Graph::trim_tips(){
 
         while(sorted_unitigs.size() > 0){
             Unitig* utg = sorted_unitigs.back();
-            Unitig* keep_utg;
-            Node* inner_end = utg->get_tip_inner_end(keep_utg);
+            Node* keep_node;
+            Node* inner_end = utg->get_tip_inner_end(keep_node);
             if (inner_end != NULL){
-                if (utg->get_median_freq() < 0.2 * keep_utg->get_median_freq()){
+                assert(keep_node != NULL);
+                Unitig* keep_utg = keep_node->get_unitig();
+                float len_thresh = (float)0.5 * (float)keep_node->longest_neighbor_utg_length();
+                if (utg->get_median_freq() < 0.2 * keep_utg->get_median_freq() || (float)utg->num_nodes() < len_thresh){
                     changed = true;
                     this->disconnect_unitig_end(inner_end, keep_utg, sorted_unitigs);
                     this->destroy_unitig(utg);
@@ -548,23 +551,6 @@ bool Graph::disconnect_unitig_end(Node* remove_node, Unitig* keep_utg, std::vect
                         this->merge_unitigs(recipient, donor);
                         recipient->get_unitig()->update_median_freq();
                         compacted = true;
-                    }else{
-                        // this is a neighbor that was parallel to the dropped unitig
-                        // add the median frequency to each k-min-mer
-                        int median_int = (int)std::round(remove_utg->get_median_freq());
-                        this->increment_unitig(median_int, neigh_neighbors[j].neighbor->get_unitig());
-                        neigh_neighbors[j].neighbor->get_unitig()->update_median_freq();
-                    }
-                }
-            }else{
-                // can't compact, but still need to add to the frequencies of neighbors parallel to the dropped unitig
-                for (size_t j{0}; j < neigh_neighbors.size(); j++){
-                    if (neigh_neighbors[j].self_orientation == dropped_dir){
-                        // this is a neighbor that was parallel to the dropped unitig
-                        // add the median frequency to each k-min-mer
-                        int median_int = (int)std::round(remove_utg->get_median_freq());
-                        this->increment_unitig(median_int, neigh_neighbors[j].neighbor->get_unitig());
-                        neigh_neighbors[j].neighbor->get_unitig()->update_median_freq();
                     }
                 }
             }
@@ -857,5 +843,6 @@ dk_graph_t* Graph::convert_to_gfa_representation(){
     }
     gfa_rep->edges = new dk_edge_t[edge_list.size()];
     std::memcpy(gfa_rep->edges, edge_list.data(), edge_list.size() * sizeof(dk_edge_t));
+    gfa_rep->n_edges = (int)edge_list.size();
     return gfa_rep;
 }

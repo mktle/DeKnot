@@ -138,7 +138,7 @@ bool Unitig::is_floating(){
 
 // a tip only has one neighbor, and that neighbor has another neighbor in the same direction
 // return NULL if this is not a tip
-Node* Unitig::get_tip_inner_end(Unitig*& adj_utg){
+Node* Unitig::get_tip_inner_end(Node*& adj_node){
     if (this->get_front()->is_tip()){
         // front doesn't have any other neighbors, so check the back's neighbor
         if (this->get_back()->num_neighbors() == 2 || (this->get_front() == this->get_back() && this->get_back()->num_neighbors() == 1)){
@@ -148,7 +148,7 @@ Node* Unitig::get_tip_inner_end(Unitig*& adj_utg){
                 if (neighbors[i].neighbor->get_unitig() != this){
                     assert(neighbors[i].neighbor->num_edges_in_dir(utils::reverse_orientation(neighbors[i].neighbor_orientation)) > 0);
                     if (neighbors[i].neighbor->num_edges_in_dir(utils::reverse_orientation(neighbors[i].neighbor_orientation)) > 1){
-                        adj_utg = neighbors[i].neighbor->get_unitig();
+                        adj_node = neighbors[i].neighbor;
                         return this->get_back();
                     }
                 }
@@ -163,7 +163,7 @@ Node* Unitig::get_tip_inner_end(Unitig*& adj_utg){
                 if (neighbors[i].neighbor->get_unitig() != this){
                     assert(neighbors[i].neighbor->num_edges_in_dir(utils::reverse_orientation(neighbors[i].neighbor_orientation)) > 0);
                     if (neighbors[i].neighbor->num_edges_in_dir(utils::reverse_orientation(neighbors[i].neighbor_orientation)) > 1){
-                        adj_utg = neighbors[i].neighbor->get_unitig();
+                        adj_node = neighbors[i].neighbor;
                         return this->get_front();
                     }
                 }

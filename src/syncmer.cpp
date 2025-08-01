@@ -15,7 +15,8 @@ void syncmer::sketch_sequences(int s, std::vector<std::string>& reads, std::vect
         std::string hpc_seq;
         std::vector<int> hp_lengths;
         hpc::get_compressed_sequence(reads[i], hpc_seq, hp_lengths);
-        SketchedSeq* curr_seq = new SketchedSeq("", true);
+        std::string seq_name {"read_" + std::to_string(i)};
+        SketchedSeq* curr_seq = new SketchedSeq(seq_name, true);
         std::vector<int> indices;
 
         syncmer::get_all_syncmers(hpc_seq, s, curr_seq->kmers, curr_seq->flipped, curr_seq->unique_seq_len, indices);

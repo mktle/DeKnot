@@ -7,6 +7,9 @@
 #include <fstream>
 #include <string>
 
+//const int DEBUG_CHECKPOINTS[] = {1888, 1786, 1589, 1554, 1452, 1017, 968, 966, 964};
+const int DEBUG_CHECKPOINTS[] = {};
+
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 
 void dk_opt_init(dk_opt_t* opt){
@@ -50,13 +53,14 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, int n_reads){
         if (!construct_graph(k_prime, prev_seqs, input_seqs, prev_graph, curr_graph, opt->verbose)){
             return NULL;
         }
+        k_prime = curr_graph->get_k_prime();
         if (opt->verbose){
-            std::cout << "k' = " << curr_graph->get_k_prime() << std::endl;
+            std::cout << "k' = " << k_prime << std::endl;
             std::cout << input_seqs.size() << " sequences" << std::endl;
             std::cout << curr_graph->num_nodes() << " initial nodes" << std::endl;
             std::cout << curr_graph->num_unitigs() << " initial unitigs" << std::endl;
         }
-        if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || (k_prime - init_k_prime) % 100 == 0)){
+        if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || (k_prime - init_k_prime) % 100 == 0 || std::find(std::begin(DEBUG_CHECKPOINTS), std::end(DEBUG_CHECKPOINTS), k_prime) != std::end(DEBUG_CHECKPOINTS))){
             std::string out_unitigs {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + ".gfa"};
             curr_graph->write_hpc_unitigs_to_gfa(out_unitigs, true);
         }
@@ -68,9 +72,17 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, int n_reads){
             times++;
         }
         curr_graph->remove_floaters(opt->compact_thresh);
-        if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || (k_prime - init_k_prime) % 100 == 0)){
+        if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || (k_prime - init_k_prime) % 100 == 0 || std::find(std::begin(DEBUG_CHECKPOINTS), std::end(DEBUG_CHECKPOINTS), k_prime) != std::end(DEBUG_CHECKPOINTS))){
             std::string out_unitigs_compacted {std::string(opt->out_dir) + "/compacted_k" + std::to_string(k_prime) + ".gfa"};
-            curr_graph->write_hpc_unitigs_to_gfa(out_unitigs_compacted, true);
+            dk_graph_t* curr_gfa = curr_graph->convert_to_gfa_representation();
+            char** curr_expanded = dk_expand_sequences(opt, reads_arr, n_reads, curr_gfa->unitigs, curr_gfa->n_unitigs);
+            //free HPC versions of the unitigs
+            for (int i{0}; i < curr_gfa->n_unitigs; i++){
+                delete[] curr_gfa->unitigs[i];
+            }
+            curr_gfa->unitigs = curr_expanded;
+            dk_write_gfa(out_unitigs_compacted.c_str(), curr_gfa);
+            dk_graph_free(curr_gfa);
         }
         if (opt->verbose){
             std::cout << curr_graph->num_nodes() << " nodes after compaction" << std::endl;
@@ -83,6 +95,10 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, int n_reads){
         k_prime = curr_graph->get_k_prime() + 1;
         prev_graph = curr_graph;
         curr_graph = new Graph(k_prime);
+    }
+    if (opt->out_dir != NULL){
+        std::string out_hpc {std::string(opt->out_dir) + "/final_hpc.gfa"};
+        prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
     }
     dk_graph_t* ret_graph = prev_graph->convert_to_gfa_representation();
     if (opt->return_hpc_utg == 0){
@@ -212,7 +228,6 @@ void dk_graph_free(dk_graph_t* to_free){
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose){
     std::vector<size_t> remove_list;
     // check the sequences to see if they should be removed (and also calculate jump length)
-    // actually add the sequences now
     int lowest_span {-1};
     for (size_t seq_idx {0}; seq_idx < input_sequences.size(); seq_idx++){
         int curr_span {-1};
@@ -230,10 +245,10 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
         k_prime += lowest_span - 1;
         dbg->set_k_prime(k_prime);
     }
+
     if (verbose){
         std::cout << "Lowest span: " << lowest_span << std::endl;
     }
-
     // actually add the sequences now
     for (size_t seq_idx {0}; seq_idx < input_sequences.size(); seq_idx++){
         //TODO: switch from linear search for index
