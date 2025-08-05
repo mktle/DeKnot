@@ -7,8 +7,8 @@
 #include <fstream>
 #include <string>
 
-//const int DEBUG_CHECKPOINTS[] = {1888, 1786, 1589, 1554, 1452, 1017, 968, 966, 964};
-const int DEBUG_CHECKPOINTS[] = {};
+const int DEBUG_CHECKPOINTS[] = {1888, 1786, 1589, 1554, 1452, 1017, 968, 966, 964};
+//const int DEBUG_CHECKPOINTS[] = {};
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 
@@ -87,6 +87,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, int n_reads){
         if (opt->verbose){
             std::cout << curr_graph->num_nodes() << " nodes after compaction" << std::endl;
             std::cout << curr_graph->num_unitigs() << " unitigs after compaction" << std::endl;
+            curr_graph->print_unitigs(true, false);
         }
         curr_graph->add_unitigs_to_input(input_seqs, opt->s);
         if (prev_graph != NULL){

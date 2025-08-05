@@ -250,7 +250,8 @@ void Unitig::get_hpc_sequence(std::string& ret_seq){
 }
 
 void Unitig::print(bool verbose){
-    std::cout << "[" << this->get_id() << "] n" << this->get_front()->get_node_id() << "\tn" << this->get_back()->get_node_id() << '\n';
+    this->update_median_freq();
+    std::cout << "[" << this->get_id() << "] n" << this->get_front()->get_node_id() << "\tn" << this->get_back()->get_node_id() << "\tmedian freq " << this->get_median_freq() << '\n';
     if (verbose){
         this->list_nodes();
     }
