@@ -6,8 +6,8 @@
 #include <cassert>
 #include <iostream>
 
-//"ACACACACACACACACACACACACACACACA", "ATATATATATATATATATATATATATATATA", "CTCTCTCTCTCTCTCTCTCTCTCTCTCTCTC"
-const ankerl::unordered_dense::set<uint64_t> DINUCLEOTIDE_HASHES = {1229782938247303440ULL, 17216961135462248172ULL, 3689348814741910320ULL, 14757395258967641292ULL, 8608480567731124084ULL, 9838263505978427528ULL};
+//15 length substrings of "ACACACACACACACACACACACACACACACA", "ATATATATATATATATATATATATATATATA", "CTCTCTCTCTCTCTCTCTCTCTCTCTCTCTC", their reverse complements, etc.
+const ankerl::unordered_dense::set<uint64_t> DINUCLEOTIDE_SUBHASHES = {71582788ULL, 1002159035ULL, 143165576ULL,214748364ULL, 286331153ULL, 501079517ULL, 572662306ULL, 787410670ULL, 858993459ULL, 930576247ULL};
 
 Node::Node(KmerView& set_ksyncmer, Span<uint8_t>& set_flipped, Span<int>& set_unique_len, int set_node, Unitig* set_unitig) : ksyncmer(set_ksyncmer), flip_kmer(set_flipped), unique_seq_len(set_unique_len) {
     this->node_idx = set_node;
@@ -190,9 +190,21 @@ void Node::get_hpc_sequence(std::string& ret_str, bool reverse){
     }
 }
 
-// returns true if a dinucleotide hash is the first or last kmer of this node
+// returns true if a dinucleotide hash is in the first or last kmer of this node
+// checking for substrings of size 15
 bool Node::end_is_dinucleotide(){
-    return DINUCLEOTIDE_HASHES.contains(this->ksyncmer.kmers[0]) || DINUCLEOTIDE_HASHES.contains(this->ksyncmer.kmers[(size_t)this->num_kmers() - 1]);
+    int last_idx = this->num_kmers() - 1;
+    for (int side : {0, last_idx}){
+        uint64_t hash = this->ksyncmer.kmers[(size_t)side];
+        uint64_t least_sig = (hash >> 2) & ((1ULL << 30) - 1);
+        uint64_t most_sig = hash >> (64 - 30); 
+        for (uint64_t subhash : {least_sig, most_sig}){
+            if (DINUCLEOTIDE_SUBHASHES.contains(subhash)){
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void Node::print(bool verbose){

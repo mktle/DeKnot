@@ -21,7 +21,7 @@ int main(int argc, char* argv[]){
         if (!input.check_arguments()) return 1;
         std::vector<std::string> read_seqs;
         parse_fq(input, read_seqs);
-
+        
         char** reads_arr = new char*[read_seqs.size()];
         for (size_t i{0}; i < read_seqs.size(); i++){
             reads_arr[i] = new char[read_seqs[i].size() + 1];

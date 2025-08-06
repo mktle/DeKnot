@@ -497,6 +497,7 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
     }
     // compacted no neighbors based on frequency, so check for branching dinucleotide site
     if (node_end->end_is_dinucleotide() && num_checked == 2){
+        std::cout << "Dropping based on dinucleotide criteria" << std::endl;//mkl
         assert(lower_utg != NULL);
         bool compacted_graph = this->drop_unitig(sorted_list, curr_utg, lower_utg);
         return compacted_graph;
