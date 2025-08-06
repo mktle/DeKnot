@@ -47,6 +47,7 @@ class Node{
         const std::vector<Edge>& view_neighbors();
         bool is_tip();
         void get_hpc_sequence(std::string& ret_str, bool reverse);
+        bool end_is_dinucleotide();
         void print(bool verbose);
 
     private:

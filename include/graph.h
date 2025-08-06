@@ -42,6 +42,7 @@ class Graph {
         void trim_tips();
         bool trim_low_freq_unitigs(int threshold);
         bool trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>& sorted_list);
+        bool drop_unitig(std::vector<Unitig*>& sorted_list, Unitig* curr_utg, Unitig* neigh_utg);
         bool disconnect_unitig_end(Node* remove_node, Unitig* keep_utg, std::vector<Unitig*>& sorted_list);
 
         void add_node_to_lookup_table(Node* to_add);
@@ -69,6 +70,9 @@ class Graph {
         std::vector<int> unitig_free_list;
 
         ankerl::unordered_dense::map<KmerView, Node*, utils::KmerViewHash, utils::KmerViewEqual> node_table;
+        // inspect and trim branches that have these kmers at the branch site
+        // e.g., dinucleotide repeats
+        ankerl::unordered_dense::set<uint64_t> drop_sites;
 };
 
 #endif

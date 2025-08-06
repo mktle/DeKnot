@@ -418,8 +418,7 @@ void Graph::trim_tips(){
             if (inner_end != NULL){
                 assert(keep_node != NULL);
                 Unitig* keep_utg = keep_node->get_unitig();
-                float len_thresh = (float)0.5 * (float)keep_node->longest_neighbor_utg_length();
-                if (utg->get_median_freq() < 0.2 * keep_utg->get_median_freq() || (float)utg->num_nodes() < len_thresh){
+                if (utg->get_median_freq() < 0.2 * keep_utg->get_median_freq()){
                     changed = true;
                     this->disconnect_unitig_end(inner_end, keep_utg, sorted_unitigs);
                     this->destroy_unitig(utg);
@@ -476,32 +475,50 @@ bool Graph::trim_low_freq_unitigs(int threshold){
 
 bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>& sorted_list){
     Unitig* curr_utg = node_end->get_unitig();
-
     const std::vector<Edge> neighbors = node_end->view_neighbors();
+    float lowest_freq {-1};
+    Unitig* lower_utg {NULL};
+    int num_checked{0};
     for (size_t i{0}; i < neighbors.size(); i++){
         Node* neigh_node = neighbors[i].neighbor;
         Unitig* neigh_utg = neigh_node->get_unitig();
-        if (neigh_utg != curr_utg && neigh_utg->get_median_freq() < thresh){
-            // neighboring unitig is less than the threshold, so drop it from the graph and recompact
-            auto it = std::find(sorted_list.begin(), sorted_list.end(), neigh_utg);
-            if(it != sorted_list.end()){
-                sorted_list.erase(it);
-            }
-
-            bool compacted_front = this->disconnect_unitig_end(neigh_utg->get_front(), curr_utg, sorted_list);
-            bool compacted_back;
-            if (neigh_utg->get_front() == neigh_utg->get_back()){
-                compacted_back = compacted_front;
+        if (neigh_utg != curr_utg){
+            if (neigh_utg->get_median_freq() < thresh){
+                bool compacted_graph = this->drop_unitig(sorted_list, curr_utg, neigh_utg);
+                if (compacted_graph) return true;
             }else{
-                compacted_back = this->disconnect_unitig_end(neigh_utg->get_back(), curr_utg, sorted_list);
-            }
-
-            this->destroy_unitig(neigh_utg);
-
-            if (compacted_front || compacted_back){
-                return true;
+                num_checked++;
+                if (lower_utg == NULL || neigh_utg->get_median_freq() < lowest_freq){
+                    lowest_freq = neigh_utg->get_median_freq();
+                    lower_utg = neigh_utg;
+                }
             }
         }
+    }
+    // compacted no neighbors based on frequency, so check for branching dinucleotide site
+    if (node_end->end_is_dinucleotide() && num_checked == 2){
+        assert(lower_utg != NULL);
+        bool compacted_graph = this->drop_unitig(sorted_list, curr_utg, lower_utg);
+        return compacted_graph;
+    }
+    return false;
+}
+
+bool Graph::drop_unitig(std::vector<Unitig*>& sorted_list, Unitig* curr_utg, Unitig* neigh_utg){
+    auto it = std::find(sorted_list.begin(), sorted_list.end(), neigh_utg);
+    if(it != sorted_list.end()){
+        sorted_list.erase(it);
+    }
+    bool compacted_front = this->disconnect_unitig_end(neigh_utg->get_front(), curr_utg, sorted_list);
+    bool compacted_back;
+    if (neigh_utg->get_front() == neigh_utg->get_back()){
+        compacted_back = compacted_front;
+    }else{
+        compacted_back = this->disconnect_unitig_end(neigh_utg->get_back(), curr_utg, sorted_list);
+    }
+    this->destroy_unitig(neigh_utg);
+    if (compacted_front || compacted_back){
+        return true;
     }
     return false;
 }
