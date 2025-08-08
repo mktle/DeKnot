@@ -429,7 +429,7 @@ void Graph::trim_tips(){
     }
 }
 
-bool Graph::trim_low_freq_unitigs(int threshold){
+bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc){
     // we will start by merging from longer unitigs
     // so first sort the unitigs by length
 
@@ -451,13 +451,13 @@ bool Graph::trim_low_freq_unitigs(int threshold){
 
         float current_thresh {2};
         while (current_thresh <= threshold){
-            bool compacted_front = this->trim_low_freq_end(curr_utg->get_front(), current_thresh, sorted_unitigs);
+            bool compacted_front = this->trim_low_freq_end(curr_utg->get_front(), current_thresh, sorted_unitigs, check_dinuc);
             bool compacted_back;
             if (curr_utg->get_front() == curr_utg->get_back()){
                 // only need to handle one side for single node unitigs
                 compacted_back = compacted_front;
             }else{
-                compacted_back = this->trim_low_freq_end(curr_utg->get_back(), current_thresh, sorted_unitigs);
+                compacted_back = this->trim_low_freq_end(curr_utg->get_back(), current_thresh, sorted_unitigs, check_dinuc);
             }
 
             if (compacted_front || compacted_back){
@@ -473,7 +473,7 @@ bool Graph::trim_low_freq_unitigs(int threshold){
     return graph_changed;
 }
 
-bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>& sorted_list){
+bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>& sorted_list, bool check_dinuc){
     Unitig* curr_utg = node_end->get_unitig();
     const std::vector<Edge> neighbors = node_end->view_neighbors();
     float lowest_freq {-1};
@@ -496,8 +496,8 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
         }
     }
     // compacted no neighbors based on frequency, so check for branching dinucleotide site
-    if (node_end->end_is_dinucleotide() && num_checked == 2){
-        std::cout << "Dropping based on dinucleotide criteria" << std::endl;//mkl
+    if (check_dinuc && node_end->end_is_dinucleotide() && num_checked == 2){
+        std::cout << "Dropping based on dinucleotide criteria (utg " << lower_utg->get_id() << " dropped during check on utg" << curr_utg->get_id() << ")" << std::endl;//mkl
         assert(lower_utg != NULL);
         bool compacted_graph = this->drop_unitig(sorted_list, curr_utg, lower_utg);
         return compacted_graph;
