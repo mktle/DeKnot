@@ -137,6 +137,7 @@ char** dk_expand_sequences(dk_opt_t* opt, char** reads_arr, int n_reads, char** 
     for (size_t i{0}; i < hpc_seqs.size(); i++){
         hpc_tallies.emplace_back(hpc_seqs[i].size());
     }
+    
 
     /**************************
      * Index unitig sequences *
@@ -238,16 +239,26 @@ void dk_graph_free(dk_graph_t* to_free){
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose){
     std::vector<size_t> remove_list;
+    std::vector<SketchedSeq*> corrected_seqs;
     // check the sequences to see if they should be removed (and also calculate jump length)
     int lowest_span {-1};
     for (size_t seq_idx {0}; seq_idx < input_sequences.size(); seq_idx++){
         int curr_span {-1};
-        if (input_sequences[seq_idx]->kmers.size() < k_prime || (prev_graph && input_sequences[seq_idx]->is_read && !prev_graph->check_sequence(input_sequences[seq_idx]->kmers, (size_t)k_prime - 1, curr_span))){
+        if (input_sequences[seq_idx]->kmers.size() < k_prime){
             remove_list.push_back(seq_idx);
-        }else if (curr_span != -1){
+        }else if (prev_graph != NULL && input_sequences[seq_idx]->is_read){
+            SketchedSeq* corrected_seq = NULL;
+            bool contained = prev_graph->check_sequence(input_sequences[seq_idx], (size_t)k_prime - 1, curr_span, corrected_seq);
+            if (contained || corrected_seq != NULL){
+                remove_list.push_back(seq_idx);
+                if (corrected_seq != NULL){
+                    corrected_seqs.push_back(corrected_seq);
+                }
+            }
+        }
+        if (curr_span != -1){
             // valid sequence
             if (lowest_span == -1 || curr_span < lowest_span) lowest_span = curr_span;
-            continue;
         }
     }
 
@@ -259,6 +270,10 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
 
     if (verbose){
         std::cout << "Lowest span: " << lowest_span << std::endl;
+    }
+    std::cout << "size: " << corrected_seqs.size() << std::endl;//mkl
+    for (size_t i{0}; i < corrected_seqs.size(); i++){
+        input_sequences.emplace_back(corrected_seqs[i]);
     }
     // actually add the sequences now
     for (size_t seq_idx {0}; seq_idx < input_sequences.size(); seq_idx++){

@@ -47,54 +47,141 @@ int Graph::num_unitigs(){
 }
 
 //  run *after* graph is completed (i.e., in the next iteration)
-// check if any of the nodes were dropped in this previous iteration (errors)
-// and check if the sequence is contained in a unitig from this previous iteration
-bool Graph::check_sequence(std::vector<uint64_t>& kmer_list, size_t check_k_prime, int& min_span){
-    // first k-syncmer
-    Span<uint64_t> first_kmers(kmer_list.data(), check_k_prime);
-    char first_orient = syncmer::canonical_syncmer(first_kmers);
-    KmerView first_canon = {first_kmers, first_orient == REVERSE_ORIENTATION};
+// check if the sequence is completely contained in a unitig from this previous iteration
+bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min_span, SketchedSeq*& corrected_seq){
+    std::vector<DroppedBlock> to_correct;
+    size_t check_thresh = orig_seq->kmers.size() - check_k_prime + 1;
+    size_t i {1};
+    /****************************************
+     * Navigate to first non-null k-syncmer *
+     ****************************************/
 
-    // if not in previous graph, was removed, so remove this sequence
-    Node* first_node = this->get_node_from_lookup_table(first_canon);
-    if (first_node == NULL){
-        min_span = -1;
-        return false;
+    Span<uint64_t> curr_kmers(orig_seq->kmers.data(), check_k_prime);
+    char curr_orient = syncmer::canonical_syncmer(curr_kmers);
+    KmerView curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION};
+
+    // go to the first node that was removed from the graph
+    Node* curr_node = this->get_node_from_lookup_table(curr_canon);
+    while (curr_node == NULL && i < check_thresh){
+        curr_kmers = Span(orig_seq->kmers.data() + i, check_k_prime);
+        curr_orient = syncmer::canonical_syncmer(curr_kmers);
+        curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION};
+        curr_node = this->get_node_from_lookup_table(curr_canon);
+        i++;
     }
 
-    Unitig* first_utg = first_node->get_unitig();
-    Node* curr_node = NULL;
+    // if a read is completely contained within a unitig, we can remove it
+    bool within_utg {true};
 
     // to calculate iteration jump
+    // TODO: min span right now is a conservative lower bound because we don't account for correction
     min_span = -1;
     int curr_span {1};
-    Unitig* track_utg = first_utg;
-    size_t check_thresh = kmer_list.size() - check_k_prime + 1;
-    for(size_t i{1}; i < check_thresh; i++){
-        Span<uint64_t> kmers(kmer_list.data() + i, check_k_prime);
+
+    bool in_dropped {false};
+    Node* dropped_start_bound = NULL;
+    Node* prev_node = curr_node;
+    int dropped_start_idx {-1};
+
+    /************************************************
+     * Identify parts of the read that were dropped *
+     ************************************************/
+    for(; i < check_thresh; i++){
+        Span<uint64_t> kmers(orig_seq->kmers.data() + i, check_k_prime);
         char orient = syncmer::canonical_syncmer(kmers);
         KmerView canon = {kmers, orient == REVERSE_ORIENTATION};
-
         curr_node = this->get_node_from_lookup_table(canon);
-        if (curr_node == NULL){
-            min_span = -1;
-            return false;
+
+        if (curr_node != NULL){
+            if (in_dropped){
+                assert(dropped_start_idx != -1);
+                // at the end of a dropped block, so add to our list
+                if (dropped_start_bound->get_unitig() == curr_node->get_unitig()){
+                    to_correct.emplace_back(dropped_start_bound, curr_node, dropped_start_idx, i - 1);
+                }
+                in_dropped = false;
+                dropped_start_idx = -1;
+            }
+        }else if (!in_dropped){
+            //on a new section of dropped region
+            assert(prev_node != NULL);
+            in_dropped = true;
+            dropped_start_bound = prev_node;
+            dropped_start_idx = (int)i;
         }
-        if (curr_node->get_unitig() != track_utg){
+
+        if (curr_node == NULL || (prev_node != NULL && curr_node->get_unitig() != prev_node->get_unitig())){
             if (min_span == -1 || curr_span < min_span){
                 min_span = curr_span;
             }
-            track_utg = curr_node->get_unitig();
             curr_span = 0;
+            within_utg = false;
         }
+        prev_node = curr_node;
         curr_span++;
     }
-    // contained in a utg iff start and end nodes are on the same unitig
-    if ((first_utg == curr_node->get_unitig()) && !(first_utg->node_is_endpoint(first_node)) && !(first_utg->node_is_endpoint(curr_node))){
-        min_span = -1;
-        return false;
+    /**************************************
+     * Correction on underlying sequences *
+     **************************************/
+    if (to_correct.size() > 0){
+        corrected_seq = new SketchedSeq("", true);
+        size_t curr_orig_idx {0};
+        for (size_t j{0}; j < to_correct.size(); j++){
+            // copy over the unaltered sequences
+            while (curr_orig_idx < to_correct[j].start_idx){
+                corrected_seq->kmers.push_back(orig_seq->kmers[curr_orig_idx]);
+                corrected_seq->flipped.push_back(orig_seq->flipped[curr_orig_idx]);
+                corrected_seq->unique_seq_len.push_back(orig_seq->unique_seq_len[curr_orig_idx]);
+                curr_orig_idx++;
+            }
+            assert(to_correct[j].end1->get_unitig() == to_correct[j].end2->get_unitig());
+            // now we're in a dropped block, so retrieve the kmers for replacement
+            // TODO: linear search is way too slow
+            const std::vector<Node*> utg_nodes = to_correct[j].end1->get_unitig()->view_nodes();
+            int first_idx {-1};
+            int last_idx {-1};
+            for (size_t k{0}; k < utg_nodes.size(); k++){
+                if (first_idx != -1){
+                    if (utg_nodes[k] == to_correct[j].end2) break;
+                    // within the region we are copying
+                    bool flipped;
+                    int unique_sl;
+                    corrected_seq->kmers.push_back(utg_nodes[k]->unique_kmer_from_neigh(utg_nodes[k - 1], flipped, unique_sl));
+                    corrected_seq->flipped.push_back(flipped);
+                    corrected_seq->unique_seq_len.push_back(unique_sl);
+                }else {
+                    if (utg_nodes[k] == to_correct[j].end1){
+                        first_idx = (int)k;
+                        // already saw the other bookend node, so terminate
+                        if (last_idx != -1) break;
+                    }else if (utg_nodes[k] == to_correct[j].end2){
+                        last_idx = (int)k;
+                    }
+                }
+            }
+            // if the sequence was backwards, add the relevant part now
+            if (last_idx != -1){
+                for (int k{last_idx}; k >= first_idx; k++){
+                    bool flipped {false};
+                    int unique_sl {-1};
+                    corrected_seq->kmers.push_back(utg_nodes[(size_t)k]->unique_kmer_from_neigh(utg_nodes[(size_t)k+1], flipped, unique_sl));
+                    corrected_seq->flipped.push_back(flipped);
+                    corrected_seq->unique_seq_len.push_back(unique_sl);
+
+                }
+            }
+            curr_orig_idx = to_correct[j].end_idx + 1;
+        }
+        while (curr_orig_idx < orig_seq->kmers.size()){
+            corrected_seq->kmers.push_back(orig_seq->kmers[curr_orig_idx]);
+            corrected_seq->flipped.push_back(orig_seq->flipped[curr_orig_idx]);
+            corrected_seq->unique_seq_len.push_back(orig_seq->unique_seq_len[curr_orig_idx]);
+            curr_orig_idx++;
+        }
+    }else{
+        corrected_seq= NULL;
     }
-    return true;
+    return within_utg;
 }
 
 bool Graph::add_sequence(SketchedSeq& input_seq, Graph* prev_graph){
@@ -497,7 +584,7 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
     }
     // compacted no neighbors based on frequency, so check for branching dinucleotide site
     if (check_dinuc && node_end->end_is_dinucleotide() && num_checked == 2){
-        std::cout << "Dropping based on dinucleotide criteria (utg " << lower_utg->get_id() << " dropped during check on utg" << curr_utg->get_id() << ")" << std::endl;//mkl
+        std::cout << "Dropping based on dinucleotide criteria (utg " << lower_utg->get_id() << " dropped during check on utg" << curr_utg->get_id() << ")" << std::endl;
         assert(lower_utg != NULL);
         bool compacted_graph = this->drop_unitig(sorted_list, curr_utg, lower_utg);
         return compacted_graph;

@@ -12,6 +12,18 @@
 #include <ankerl/unordered_dense.h>
 #include <vector>
 
+// corresponds to a part of an input sequence that is not found in the cleaned graph
+// i.e., this part was probably dropped because of an error
+// so we will fix it
+struct DroppedBlock {
+    Node* end1;
+    Node* end2;
+    size_t start_idx;
+    size_t end_idx;
+
+    DroppedBlock(Node* e1, Node* e2, size_t s_idx, size_t e_idx) : end1(e1), end2(e2), start_idx(s_idx), end_idx(e_idx) {}
+};
+
 class Graph {
     public:
         Graph(int set_k_prime);
@@ -20,7 +32,7 @@ class Graph {
         void set_k_prime(int set_val);
         int num_nodes();
         int num_unitigs();
-        bool check_sequence(std::vector<uint64_t>& kmer_list, size_t check_k_prime, int& min_span);
+        bool check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min_span, SketchedSeq*& corrected_seq);
         bool add_sequence(SketchedSeq& input_seq, Graph* prev_graph);
         bool add_connection(KmerView& first, char first_orient, KmerView& second, char second_orient);
 
