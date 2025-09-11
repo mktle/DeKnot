@@ -1,5 +1,6 @@
 #include "deknot.h"
 #include "graph.h"
+#include "io.h"
 
 #include <cassert>
 #include <cmath>
@@ -78,6 +79,8 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             curr_gfa->unitigs = curr_expanded;
             dk_write_gfa(out_unitigs.c_str(), curr_gfa);
             dk_graph_free(curr_gfa);
+            std::string out_reads {std::string(opt->out_dir) + "/k" + std::to_string(k_prime) + "_reads.fa"};
+            io::write_sequences(input_seqs, out_reads);
         }
         int times {0};
         bool check_dinuc {k_prime - init_k_prime > 200};
