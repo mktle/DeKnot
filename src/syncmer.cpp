@@ -9,13 +9,13 @@
 #include <fstream>
 #include <iostream>
 
-void syncmer::sketch_sequences(int s, std::vector<std::string>& reads, std::vector<SketchedSeq*>& ret_sketches){
+void syncmer::sketch_sequences(int s, std::vector<std::string>& reads, std::vector<std::string>& names, std::vector<SketchedSeq*>& ret_sketches){
     for (size_t i{0}; i < reads.size(); i++){
         // perform homopolymer compression
         std::string hpc_seq;
         std::vector<int> hp_lengths;
         hpc::get_compressed_sequence(reads[i], hpc_seq, hp_lengths);
-        std::string seq_name {"read_" + std::to_string(i)};
+        std::string seq_name = names.size() > 0 ? names[i] : "read_" + std::to_string(i);
         SketchedSeq* curr_seq = new SketchedSeq(seq_name, true);
         std::vector<int> indices;
 

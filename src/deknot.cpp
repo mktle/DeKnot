@@ -30,13 +30,19 @@ int dk_set_opt(const char* preset, dk_opt_t* opt){
     return 0;
 }
 
-dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, int n_reads){
+dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names, int n_reads){
     /************************************************************
      * Initialization (convert to C++ structures, sketch reads) *
      ************************************************************/
     std::vector<std::string> reads(reads_arr, reads_arr + n_reads);
+    std::vector<std::string> names;
+    if (read_names != NULL){
+        for (int i{0}; i < n_reads; i++){
+            names.emplace_back(read_names[i]);
+        }
+    }
     std::vector<SketchedSeq*> input_seqs;
-    syncmer::sketch_sequences(opt->s, reads, input_seqs);
+    syncmer::sketch_sequences(opt->s, reads, names, input_seqs);
     std::vector<SketchedSeq*> prev_seqs;
 
     /*************************************************************************
@@ -271,7 +277,6 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
     if (verbose){
         std::cout << "Lowest span: " << lowest_span << std::endl;
     }
-    std::cout << "size: " << corrected_seqs.size() << std::endl;//mkl
     for (size_t i{0}; i < corrected_seqs.size(); i++){
         input_sequences.emplace_back(corrected_seqs[i]);
     }

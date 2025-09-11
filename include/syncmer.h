@@ -23,7 +23,7 @@ struct SketchedSeq{
 
 
 namespace syncmer{
-    void sketch_sequences(int s, std::vector<std::string>& reads, std::vector<SketchedSeq*>& ret_sketches);
+    void sketch_sequences(int s, std::vector<std::string>& reads, std::vector<std::string>& names, std::vector<SketchedSeq*>& ret_sketches);
     void get_all_syncmers(std::string& sequence, int s, std::vector<uint64_t>& kmer_list, std::vector<uint8_t>& flipped_list, std::vector<int>& unique_seq_len, std::vector<int>& indices);
     bool next_syncmer(int k, int s, std::string& seq, int& pos_next, uint64_t&hash, uint64_t& rc_hash);
     bool hash_is_syncmer(int k, int s, uint64_t hash);
