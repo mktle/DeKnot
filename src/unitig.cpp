@@ -70,6 +70,7 @@ void Unitig::drain_nodes(std::vector<Node*>& recipient, Node* breakpoint){
         this->nodes.erase(this->nodes.begin());
     }
     // so far, this function is only called in the context of splitting unitigs
+    //std::cout << "num neighbors (" << this->get_id() << ":) " << this->nodes.front()->num_neighbors() << std::endl;//mkl
     assert(this->nodes.front()->num_neighbors() == 3);
 
     // figure out whether the breakpoint should be popped into the new unitig (depends on direction of the edge that was just added)
@@ -248,6 +249,66 @@ void Unitig::get_hpc_sequence(std::string& ret_seq){
         }
     }
 }
+
+// for debugging
+// prints the unique kmers of each node
+void Unitig::print_kmers(){
+    std::cout << "kmers for utg" << this->get_id() << std::endl;
+    Node* curr_node = this->get_front();
+    curr_node->print_kmers();
+    if (this->get_front() == this->get_back()) return;
+    int k_prime = curr_node->num_kmers();
+    char curr_direction = INVALID_ORIENTATION;
+    char next_direction = INVALID_ORIENTATION;
+    // figure out the direction to read the initial sequence
+    const std::vector<Edge>& neighbors = curr_node->view_neighbors();
+    for (size_t i{0}; i < neighbors.size(); i++){
+        if (neighbors[i].neighbor->get_unitig()->get_id() == curr_node->get_unitig()->get_id()){
+            curr_direction = neighbors[i].self_orientation;
+            next_direction = neighbors[i].neighbor_orientation;
+            break;
+        }
+    }
+    assert(curr_direction != INVALID_ORIENTATION);
+    assert(next_direction != INVALID_ORIENTATION);
+    size_t offset {(size_t)k_prime - 1};
+
+    // now go through the rest of the nodes in the unitig and add the last kmer of that node
+    for (size_t i{1}; i < this->nodes.size(); i++){
+        curr_node = this->nodes[i];
+        // add the kmer that extends past the current node
+        if (next_direction == FORWARD_ORIENTATION){
+            std::string res;
+            hash::hash_to_kmer(curr_node->ith_kmer(k_prime - 1), curr_node->ith_kmer_flipped(k_prime - 1), res);
+            std::cout << "(" << i + offset << ") " << curr_node->ith_kmer(k_prime - 1) << " " << res << " " << curr_node->ith_unique_seq_len(k_prime - 1) << std::endl;
+        }else{
+            assert(next_direction == REVERSE_ORIENTATION);
+            std::string res;
+            hash::hash_to_kmer(curr_node->ith_kmer(0), curr_node->ith_kmer_flipped(0), res);
+            std::cout << "(" << i + offset << ") " << curr_node->ith_kmer_flipped(0) << " " << res << " " << curr_node->ith_unique_seq_len(0) << std::endl;
+        }
+
+        if (i < this->nodes.size() - 1){
+            char save_direction = next_direction;
+            next_direction = INVALID_ORIENTATION;
+            // figure out which node is the next one
+            const std::vector<Edge>& curr_neighbors = curr_node->view_neighbors();
+            for (size_t j{0}; j < curr_neighbors.size(); j++){
+                Node* neigh = curr_neighbors[j].neighbor;
+                if (neigh != this->nodes[i - 1] && neigh->get_unitig()->get_id() == curr_node->get_unitig()->get_id()){
+                    if (curr_neighbors[j].self_orientation != save_direction){
+                        next_direction = utils::reverse_orientation(curr_neighbors[j].neighbor_orientation);
+                    }else{
+                        next_direction = curr_neighbors[j].neighbor_orientation;
+                    }
+                }
+            }
+            assert(next_direction != INVALID_ORIENTATION);
+        }
+    }
+    std::cout << "----------" << std::endl;
+}
+
 
 void Unitig::print(bool verbose){
     this->update_median_freq();

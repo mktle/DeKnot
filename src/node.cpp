@@ -80,13 +80,13 @@ uint64_t Node::unique_kmer_from_neigh(Node* neigh, bool& flipped, int& unique_se
     for (int i{0}; i < this->neighbors.size(); i++){
         if (this->neighbors[(size_t)i].neighbor == neigh){
             if (this->neighbors[(size_t)i].self_orientation == FORWARD_ORIENTATION){
-                flipped = this->get_front_flipped();
-                unique_seq_len = this->get_front_seq_len();
-                return this->get_front_hash();
+                flipped = this->ith_kmer_flipped(this->num_kmers() - 1);
+                unique_seq_len = this->ith_unique_seq_len(this->num_kmers() - 2);
+                return this->get_back_hash();
             }
-            flipped = this->get_back_flipped();
-            unique_seq_len = this->get_back_seq_len();
-            return this->get_back_hash();
+            flipped = !this->ith_kmer_flipped(0);
+            unique_seq_len = this->ith_unique_seq_len(0);
+            return this->get_front_hash();
         }
     }
     assert(0);
@@ -146,36 +146,6 @@ uint64_t Node::get_back_hash(){
         return *(this->ksyncmer.kmers.begin());
     }
     return *(this->ksyncmer.kmers.end() - 1);
-}
-
-
-
-bool Node::get_front_flipped(){
-    if (this->ksyncmer.flip){
-        return !this->flip_kmer[this->flip_kmer.size() - 1];
-    }
-    return this->flip_kmer[0];
-}
-
-bool Node::get_back_flipped(){
-    if (this->ksyncmer.flip){
-        return !this->flip_kmer[0];
-    }
-    return this->flip_kmer[this->flip_kmer.size() - 1];
-}
-
-int Node::get_front_seq_len(){
-    if (this->ksyncmer.flip){
-        return this->unique_seq_len[0];
-    }
-    return this->unique_seq_len[this->unique_seq_len.size() - 1];
-}
-
-int Node::get_back_seq_len(){
-    if (this->ksyncmer.flip){
-        return this->unique_seq_len[this->unique_seq_len.size() - 1];
-    }
-    return this->unique_seq_len[0];
 }
 
 bool Node::neighbors_diff_utg(){
@@ -251,6 +221,18 @@ bool Node::end_is_dinucleotide(){
         }
     }
     return false;
+}
+
+void Node::print_kmers(){
+    if (this->ksyncmer.flip){
+        for (int i{(int)this->ksyncmer.kmers.size()}; i >= 0 ; i--){
+            std::cout << this->ksyncmer.kmers[(size_t)i] << std::endl;
+        }
+    }else{
+        for (size_t i{0}; i < this->ksyncmer.kmers.size(); i++){
+            std::cout << this->ksyncmer.kmers[i] << std::endl;//mkl
+        }
+    }
 }
 
 void Node::print(bool verbose){

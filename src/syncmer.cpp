@@ -46,7 +46,6 @@ void syncmer::get_all_syncmers(std::string& sequence, int s, std::vector<uint64_
         took_reverse = syncmer::next_syncmer(KMER_SIZE, s, sequence, next_pos, curr_hash, rc_hash);
     }
 }
-
 bool syncmer::next_syncmer(int k, int s, std::string& seq, int& pos_next, uint64_t&hash, uint64_t& rc_hash){
     assert(pos_next > 0);
     if (pos_next == seq.size()){

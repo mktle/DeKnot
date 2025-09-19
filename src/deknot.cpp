@@ -9,7 +9,7 @@
 #include <string>
 
 //const int DEBUG_CHECKPOINTS[] = {1888, 1786, 1589, 1554, 1452, 1017, 968, 966, 964};
-const int DEBUG_CHECKPOINTS[] = {1437, 1366, 1141, 697, 653, 617, 564, 551, 549, 523, 521, 520};
+const int DEBUG_CHECKPOINTS[] = {3};
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 
@@ -55,7 +55,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
     Graph* curr_graph = new Graph(k_prime);
     while(k_prime <= init_k_prime + opt->max_iterations && (prev_graph == NULL || prev_graph->any_connected_unitigs())){
         if(opt->verbose){
-            std::cout << "\n*****\n" << std::endl;
+            std::cout << "\n*****\nbeginning construction:" << std::endl;
         }
         if (!construct_graph(k_prime, prev_seqs, input_seqs, prev_graph, curr_graph, opt->verbose)){
             return NULL;

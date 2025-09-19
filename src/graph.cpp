@@ -124,10 +124,16 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
      * Correction on underlying sequences *
      **************************************/
     if (to_correct.size() > 0){
-        corrected_seq = new SketchedSeq("", true);
+        std::cout << "TRYING TO CORRECT " << orig_seq->name << std::endl;//mkl
+        corrected_seq = new SketchedSeq(orig_seq->name + "MKL", true);
         size_t curr_orig_idx {0};
         for (size_t j{0}; j < to_correct.size(); j++){
             // copy over the unaltered sequences
+            /*//mkl
+            std::string temp;//mkl
+            to_correct[j].end1->get_unitig()->get_hpc_sequence(temp);//mkl
+            std::cout << temp << std::endl;//mkl
+            *///mkl
             while (curr_orig_idx < to_correct[j].start_idx){
                 corrected_seq->kmers.push_back(orig_seq->kmers[curr_orig_idx]);
                 corrected_seq->flipped.push_back(orig_seq->flipped[curr_orig_idx]);
@@ -135,6 +141,9 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                 curr_orig_idx++;
             }
             assert(to_correct[j].end1->get_unitig() == to_correct[j].end2->get_unitig());
+            std::cout << "correcting on utg" << to_correct[j].end1->get_unitig()->get_id() << std::endl;//mkl
+            std::cout << "start: " << to_correct[j].start_idx  << std::endl;//mkl
+            std::cout << "end: " << to_correct[j].end_idx  << std::endl;//mkl
             // now we're in a dropped block, so retrieve the kmers for replacement
             // TODO: linear search is way too slow
             const std::vector<Node*> utg_nodes = to_correct[j].end1->get_unitig()->view_nodes();
@@ -146,7 +155,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                     // within the region we are copying
                     bool flipped;
                     int unique_sl;
-                    corrected_seq->kmers.push_back(utg_nodes[k]->unique_kmer_from_neigh(utg_nodes[k - 1], flipped, unique_sl));
+                    corrected_seq->kmers.push_back(utg_nodes[k]->unique_kmer_from_neigh(utg_nodes[k + 1], flipped, unique_sl));
                     corrected_seq->flipped.push_back(flipped);
                     corrected_seq->unique_seq_len.push_back(unique_sl);
                 }else {
@@ -159,18 +168,24 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                     }
                 }
             }
+            std::cout << "FINAL first idx is: " << first_idx << std::endl;//mkl
+            std::cout << "FINAL last idx is: " << last_idx << std::endl;//mkl
+            to_correct[j].end1->get_unitig()->print_kmers();
+
             // if the sequence was backwards, add the relevant part now
             if (last_idx != -1){
-                for (int k{last_idx}; k >= first_idx; k++){
+                assert(last_idx < first_idx);
+                for (int k{first_idx}; k > last_idx; k--){
                     bool flipped {false};
                     int unique_sl {-1};
-                    corrected_seq->kmers.push_back(utg_nodes[(size_t)k]->unique_kmer_from_neigh(utg_nodes[(size_t)k+1], flipped, unique_sl));
+                    std::cout << "k is " << k << std::endl;//mkl
+                    std::cout << "INSERTING (backward): " << utg_nodes[(size_t)k]->unique_kmer_from_neigh(utg_nodes[(size_t)k-1], flipped, unique_sl) << std::endl;//mkl
+                    corrected_seq->kmers.push_back(utg_nodes[(size_t)k]->unique_kmer_from_neigh(utg_nodes[(size_t)k-1], flipped, unique_sl));
                     corrected_seq->flipped.push_back(flipped);
                     corrected_seq->unique_seq_len.push_back(unique_sl);
-
                 }
             }
-            curr_orig_idx = to_correct[j].end_idx + 1;
+            curr_orig_idx = to_correct[j].end_idx + 2;
         }
         while (curr_orig_idx < orig_seq->kmers.size()){
             corrected_seq->kmers.push_back(orig_seq->kmers[curr_orig_idx]);
@@ -178,8 +193,22 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
             corrected_seq->unique_seq_len.push_back(orig_seq->unique_seq_len[curr_orig_idx]);
             curr_orig_idx++;
         }
+    std::cout << "\n---\nold seq:" << std::endl;//mkl
+    for (size_t i{0}; i < orig_seq->kmers.size(); i++){//mkl
+        std::string res;//mkl
+        hash::hash_to_kmer(orig_seq->kmers[i], orig_seq->flipped[i], res);//mkl
+        std::cout << "(old " << i << ") " << orig_seq->kmers[i] << " " << res << " " << orig_seq->unique_seq_len[i] << std::endl;//mkl//mkl
+    }//mkl
+
+    std::cout << "\n---\nnew seq:" << std::endl;//mkl
+    for (size_t i{0}; i < corrected_seq->kmers.size(); i++){//mkl
+        std::string res;//mkl
+        hash::hash_to_kmer(corrected_seq->kmers[i], corrected_seq->flipped[i], res);
+        std::cout << "(new " << i << ") " << corrected_seq->kmers[i] << " " << res << " " << corrected_seq->unique_seq_len[i] << std::endl;//mkl//mkl
+    }//mkl
+    //assert(0);//mkl
     }else{
-        corrected_seq= NULL;
+        corrected_seq = NULL;
     }
     return within_utg;
 }
