@@ -134,7 +134,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
             to_correct[j].end1->get_unitig()->get_hpc_sequence(temp);//mkl
             std::cout << temp << std::endl;//mkl
             *///mkl
-            while (curr_orig_idx < to_correct[j].start_idx){
+            while (curr_orig_idx <= to_correct[j].start_idx){
                 corrected_seq->kmers.push_back(orig_seq->kmers[curr_orig_idx]);
                 corrected_seq->flipped.push_back(orig_seq->flipped[curr_orig_idx]);
                 corrected_seq->unique_seq_len.push_back(orig_seq->unique_seq_len[curr_orig_idx]);
@@ -155,6 +155,8 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                     // within the region we are copying
                     bool flipped;
                     int unique_sl;
+                    std::cout << "k is " << k << std::endl;//mkl
+                    std::cout << "INSERTING (forward): " << utg_nodes[(size_t)k]->unique_kmer_from_neigh(utg_nodes[(size_t)k-1], flipped, unique_sl) << std::endl;//mkl
                     corrected_seq->kmers.push_back(utg_nodes[k]->unique_kmer_from_neigh(utg_nodes[k + 1], flipped, unique_sl));
                     corrected_seq->flipped.push_back(flipped);
                     corrected_seq->unique_seq_len.push_back(unique_sl);
@@ -185,7 +187,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                     corrected_seq->unique_seq_len.push_back(unique_sl);
                 }
             }
-            curr_orig_idx = to_correct[j].end_idx + 2;
+            curr_orig_idx = to_correct[j].end_idx;
         }
         while (curr_orig_idx < orig_seq->kmers.size()){
             corrected_seq->kmers.push_back(orig_seq->kmers[curr_orig_idx]);
