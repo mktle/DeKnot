@@ -230,7 +230,6 @@ void Node::print_kmers(){
         }
     }else{
         for (size_t i{0}; i < this->ksyncmer.kmers.size(); i++){
-            std::cout << this->ksyncmer.kmers[i] << std::endl;//mkl
         }
     }
 }

@@ -70,7 +70,6 @@ void Unitig::drain_nodes(std::vector<Node*>& recipient, Node* breakpoint){
         this->nodes.erase(this->nodes.begin());
     }
     // so far, this function is only called in the context of splitting unitigs
-    //std::cout << "num neighbors (" << this->get_id() << ":) " << this->nodes.front()->num_neighbors() << std::endl;//mkl
     assert(this->nodes.front()->num_neighbors() == 3);
 
     // figure out whether the breakpoint should be popped into the new unitig (depends on direction of the edge that was just added)
@@ -280,7 +279,7 @@ void Unitig::print_kmers(){
         if (next_direction == FORWARD_ORIENTATION){
             std::string res;
             hash::hash_to_kmer(curr_node->ith_kmer(k_prime - 1), curr_node->ith_kmer_flipped(k_prime - 1), res);
-            std::cout << "(" << i + offset << ") " << curr_node->ith_kmer(k_prime - 1) << " " << res << " " << curr_node->ith_unique_seq_len(k_prime - 1) << std::endl;
+            std::cout << "(" << i + offset << ") " << curr_node->ith_kmer(k_prime - 1) << " " << res << " " << curr_node->ith_unique_seq_len(k_prime - 2) << std::endl;
         }else{
             assert(next_direction == REVERSE_ORIENTATION);
             std::string res;
