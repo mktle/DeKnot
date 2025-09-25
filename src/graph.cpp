@@ -69,6 +69,8 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
         curr_node = this->get_node_from_lookup_table(curr_canon);
         i++;
     }
+    // where we will start copying sequence from (i.e., drop errors on ends of reads)
+    size_t curr_orig_idx = i - 1;
 
     // if a read is completely contained within a unitig, we can remove it
     bool within_utg {true};
@@ -120,12 +122,15 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
         prev_node = curr_node;
         curr_span++;
     }
+
+    // check if we need to drop other end of read because it contains an error
+    size_t read_stop_idx = in_dropped ? (size_t)dropped_start_idx : orig_seq->kmers.size();
+
     /**************************************
      * Correction on underlying sequences *
      **************************************/
     if (to_correct.size() > 0){
         corrected_seq = new SketchedSeq(orig_seq->name + "MKL", true);
-        size_t curr_orig_idx {0};
         for (size_t j{0}; j < to_correct.size(); j++){
             // copy over the unaltered sequences
             while (curr_orig_idx <= to_correct[j].start_idx){
@@ -174,7 +179,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
             }
             curr_orig_idx = to_correct[j].end_idx + 2;
         }
-        while (curr_orig_idx < orig_seq->kmers.size()){
+        while (curr_orig_idx < read_stop_idx){
             corrected_seq->kmers.push_back(orig_seq->kmers[curr_orig_idx]);
             corrected_seq->flipped.push_back(orig_seq->flipped[curr_orig_idx]);
             corrected_seq->unique_seq_len.push_back(orig_seq->unique_seq_len[curr_orig_idx]);
