@@ -9,7 +9,7 @@
 #include <string>
 
 //const int DEBUG_CHECKPOINTS[] = {1888, 1786, 1589, 1554, 1452, 1017, 968, 966, 964};
-const int DEBUG_CHECKPOINTS[] = {3};
+const int DEBUG_CHECKPOINTS[] = {184};
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 

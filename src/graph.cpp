@@ -98,7 +98,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
             if (in_dropped){
                 assert(dropped_start_idx != -1);
                 // at the end of a dropped block, so add to our list
-                if (dropped_start_bound->get_unitig() == curr_node->get_unitig()){
+                if (dropped_start_bound != curr_node && dropped_start_bound->get_unitig() == curr_node->get_unitig()){
                     to_correct.emplace_back(dropped_start_bound, curr_node, dropped_start_idx, i - 1);
                 }
                 in_dropped = false;
