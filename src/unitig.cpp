@@ -39,6 +39,14 @@ Node* Unitig::get_back(){
     return this->nodes.back();
 }
 
+Node* Unitig::opposite_end(Node* in_end){
+    if (in_end == this->nodes.back()){
+        return this->nodes.front();
+    }
+    assert(in_end == this->nodes.front());
+    return this->nodes.back();
+}
+
 int Unitig::get_id(){
     return this->index;
 }

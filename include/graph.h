@@ -51,12 +51,11 @@ class Graph {
         void create_unitig_for_node(Node* node);
 
         void remove_floaters(int threshold);
-        void trim_tips();
         bool trim_low_freq_unitigs(int threshold, bool check_dinuc);
         bool trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>& sorted_list, bool check_dinuc);
         bool drop_unitig(std::vector<Unitig*>& sorted_list, Unitig* curr_utg, Unitig* neigh_utg);
+        bool dinuc_topology(Node* curr_end, Unitig* dropped_utg);
         bool disconnect_unitig_end(Node* remove_node, Unitig* keep_utg, std::vector<Unitig*>& sorted_list);
-
         void add_node_to_lookup_table(Node* to_add);
         Node* get_node_from_lookup_table(KmerView& k_syncmer);
 

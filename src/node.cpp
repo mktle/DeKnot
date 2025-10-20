@@ -230,6 +230,7 @@ void Node::print_kmers(){
         }
     }else{
         for (size_t i{0}; i < this->ksyncmer.kmers.size(); i++){
+            std::cout << "(" << i << ")" << this->ksyncmer.kmers[(size_t)i] << std::endl;
         }
     }
 }

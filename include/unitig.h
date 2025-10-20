@@ -17,6 +17,7 @@ class Unitig{
         int num_nodes();
         Node* get_front();
         Node* get_back();
+        Node* opposite_end(Node* in_end);
         int get_id();
 
         const std::vector<Node*>& view_nodes();

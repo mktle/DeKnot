@@ -8,6 +8,7 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <queue>
 #include <string>
 
 Graph::Graph(int set_k_prime){
@@ -130,7 +131,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
      * Correction on underlying sequences *
      **************************************/
     if (to_correct.size() > 0){
-        corrected_seq = new SketchedSeq(orig_seq->name + "MKL", true);
+        corrected_seq = new SketchedSeq(orig_seq->name + "M", true);
         for (size_t j{0}; j < to_correct.size(); j++){
             // copy over the unaltered sequences
             while (curr_orig_idx <= to_correct[j].start_idx){
@@ -164,7 +165,6 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                     }
                 }
             }
-
             // if the sequence was backwards, add the relevant part now
             if (last_idx != -1){
                 assert(last_idx < first_idx);
@@ -424,8 +424,7 @@ int Graph::k_plus_one_mer_count(Span<uint64_t>& k_syncmer){
     for (int i{0}; i < curr_k_prime - (size_t)this->k_prime; i++){
         copy = Span(k_syncmer.data() + i + 1, (size_t)this->k_prime);
         canon = {copy, syncmer::canonical_syncmer(copy) == REVERSE_ORIENTATION};
-        assert(this->node_table.count(canon) > 0);
-        int curr_val {this->node_table[canon]->get_count()};
+        int curr_val = this->node_table.count(canon) > 0 ? this->node_table[canon]->get_count() : 1;
         if (curr_val < min_val){
             min_val = curr_val;
         }
@@ -487,38 +486,6 @@ void Graph::remove_floaters(int threshold){
         Unitig* utg = this->unitig_list[i];
         if (utg != NULL && utg->is_floating() && utg->get_median_freq() <= threshold){
             this->destroy_unitig(utg);
-        }
-    }
-}
-
-void Graph::trim_tips(){
-    bool changed = true;
-    while(changed){
-        changed = false;
-        std::vector<Unitig*> sorted_unitigs;
-        for (size_t i{0}; i < this->unitig_list.size(); i++){
-            Unitig* utg = this->unitig_list[i];
-            if (utg != NULL){
-                utg->update_median_freq();
-                sorted_unitigs.push_back(utg);
-            }
-        }
-        std::sort(sorted_unitigs.begin(), sorted_unitigs.end(), compare_unitigs);
-
-        while(sorted_unitigs.size() > 0){
-            Unitig* utg = sorted_unitigs.back();
-            Node* keep_node;
-            Node* inner_end = utg->get_tip_inner_end(keep_node);
-            if (inner_end != NULL){
-                assert(keep_node != NULL);
-                Unitig* keep_utg = keep_node->get_unitig();
-                if (utg->get_median_freq() < 0.2 * keep_utg->get_median_freq()){
-                    changed = true;
-                    this->disconnect_unitig_end(inner_end, keep_utg, sorted_unitigs);
-                    this->destroy_unitig(utg);
-                }
-            }
-            sorted_unitigs.pop_back();
         }
     }
 }
@@ -590,11 +557,69 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
         }
     }
     // compacted no neighbors based on frequency, so check for branching dinucleotide site
-    if (check_dinuc && node_end->end_is_dinucleotide() && num_checked == 2){
+    // and make sure it isn't a main bubble (true variation at a dinuc site)
+    if (check_dinuc && node_end->end_is_dinucleotide() && num_checked == 2 && this->dinuc_topology(node_end, lower_utg)){
         std::cout << "Dropping based on dinucleotide criteria (utg " << lower_utg->get_id() << " dropped during check on utg" << curr_utg->get_id() << ")" << std::endl;
         assert(lower_utg != NULL);
         bool compacted_graph = this->drop_unitig(sorted_list, curr_utg, lower_utg);
         return compacted_graph;
+    }
+    return false;
+}
+
+bool Graph::dinuc_topology(Node* curr_end, Unitig* dropped_utg){
+    // ask ourselves if we can get to the dropped_utg's other neighbor without going through the curr_utg's neighbors
+    // if so, this is likely a dinucleotide error and not a real variant
+    Unitig* curr_utg = curr_end->get_unitig();
+    const std::vector<Edge> neighbors = curr_end->view_neighbors();
+    assert(neighbors.size() == 3);
+    Node* dropped_end {NULL};
+    Unitig* parallel_utg {NULL};
+    for (size_t i{0}; i < neighbors.size(); i++){
+        Unitig* neigh_utg = neighbors[i].neighbor->get_unitig();
+        if (neigh_utg == dropped_utg){
+            dropped_end = neighbors[i].neighbor;
+        }
+        if (neigh_utg != dropped_utg && neigh_utg != curr_utg){
+            parallel_utg = neigh_utg;
+        }
+    }
+    assert(parallel_utg != NULL);
+    ankerl::unordered_dense::set<Unitig*> ignore_utgs;
+    ignore_utgs.insert(curr_utg);
+    ignore_utgs.insert(parallel_utg);
+
+    assert(dropped_end != NULL);
+
+    // perform a graph search
+    ankerl::unordered_dense::set<Node*> seen_nodes;
+    std::queue<Node*> to_check;
+    to_check.push(curr_utg->opposite_end(curr_end));
+    seen_nodes.insert(curr_end);
+    while(to_check.size() > 0){
+        Node* curr_node {to_check.front()};
+        to_check.pop();
+
+        const std::vector<Edge> curr_neighbors = curr_node->view_neighbors();
+        for (size_t i{0}; i < curr_neighbors.size(); i++){
+            Node* neigh_node = neighbors[i].neighbor;
+            Unitig* neigh_utg = neigh_node->get_unitig();
+            if (neigh_node->get_unitig() != neigh_utg){
+                if (neigh_utg == dropped_utg){
+                    return true;
+                }
+
+                if (ignore_utgs.find(neigh_node->get_unitig()) == ignore_utgs.end() && seen_nodes.find(neigh_node) == seen_nodes.end()){
+                    seen_nodes.insert(neigh_node);
+                    to_check.push(neigh_node);
+                }
+            }
+        }
+        Node* curr_op = curr_node->get_unitig()->opposite_end(curr_node);
+        if (seen_nodes.find(curr_op) == seen_nodes.end()){
+            seen_nodes.insert(curr_op);
+            to_check.push(curr_op);
+        }
     }
     return false;
 }
