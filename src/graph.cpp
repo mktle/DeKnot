@@ -286,6 +286,8 @@ bool Graph::add_connection(KmerView& first, char first_orient, KmerView& second,
             if (same_utg && !second_orig_end){
                 this->split_unitig(new_utg, second_node);
             }
+            first_utg = first_node->get_unitig();
+            second_utg = second_node->get_unitig();
         }
         if (!second_utg->node_is_endpoint(second_node)){
             this->split_unitig(second_utg, second_node);
@@ -463,8 +465,7 @@ int Graph::k_plus_one_mer_count(Span<uint64_t>& k_syncmer){
     // find the minimum value across all sub-(k'-n)-syncmers
     Span<uint64_t> copy = Span(k_syncmer.data(), (size_t)this->k_prime);
     KmerView canon = {copy, syncmer::canonical_syncmer(copy) == REVERSE_ORIENTATION};
-    assert(this->node_table.count(canon) > 0);
-    int min_val = this->node_table[canon]->get_count();
+    int min_val = this->node_table.count(canon) > 0 ? this->node_table[canon]->get_count() : 1;
 
     // check all the other (k'-n) syncmers
     for (int i{0}; i < curr_k_prime - (size_t)this->k_prime; i++){
