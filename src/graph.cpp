@@ -270,33 +270,13 @@ bool Graph::add_connection(KmerView& first, char first_orient, KmerView& second,
             this->merge_unitigs(first_node, second_node);
         }
     }else if (first_utg->node_is_endpoint(first_node) && second_utg->node_is_endpoint(second_node)){
-         // endpoints may need to be isolated into their own unitigs
-        if (first_node->num_edges_in_dir(first_utg->get_in_dir(first_node)) > 1){
-            if (first_utg->get_front() == first_node){
-                first_utg->pop_front();
-                this->free_unitig_if_empty(first_utg);
-            }else{
-                assert(first_utg->get_back() == first_node);
-                first_utg->pop_back();
-                this->free_unitig_if_empty(first_utg);
-            }
-            this->create_unitig_for_node(first_node);
-        }
-
-        if (first_node != second_node && second_node->num_edges_in_dir(second_utg->get_in_dir(second_node)) > 1){
-            if (second_utg->get_front() == second_node){
-                second_utg->pop_front();
-                this->free_unitig_if_empty(second_utg);
-            }else{
-                assert(second_utg->get_back() == second_node);
-                second_utg->pop_back();
-                this->free_unitig_if_empty(second_utg);
-            }
-            this->create_unitig_for_node(second_node);
-        }
+        this->check_endpoints(first_node, second_node);
     }else{
         // we have to break some unitigs apart, and the nodes will be connected but not on the same unitig
-        if (!first_utg->node_is_endpoint(first_node)){
+        this->check_endpoints(first_node, second_node);
+        first_utg = first_node->get_unitig();
+        second_utg = second_node->get_unitig();
+        if (!(first_utg->node_is_endpoint(first_node))){
              // same_utg handles special case where the nodes are originally on the same unitig
             bool same_utg = (first_utg->get_id() == second_utg->get_id());
             bool second_orig_end = second_utg->node_is_endpoint(second_node);
@@ -310,6 +290,35 @@ bool Graph::add_connection(KmerView& first, char first_orient, KmerView& second,
         }
     }
     return true;
+}
+
+void Graph::check_endpoints(Node* first_node, Node* second_node){
+    Unitig* first_utg = first_node->get_unitig();
+    Unitig* second_utg = second_node->get_unitig();
+    // endpoints may need to be isolated into their own unitigs
+    if (first_utg->node_is_endpoint(first_node) && first_node->num_edges_in_dir(first_utg->get_in_dir(first_node)) > 1){
+        if (first_utg->get_front() == first_node){
+            first_utg->pop_front();
+            this->free_unitig_if_empty(first_utg);
+        }else{
+            assert(first_utg->get_back() == first_node);
+            first_utg->pop_back();
+            this->free_unitig_if_empty(first_utg);
+        }
+        this->create_unitig_for_node(first_node);
+    }
+
+    if (first_node != second_node && second_utg->node_is_endpoint(second_node) && second_node->num_edges_in_dir(second_utg->get_in_dir(second_node)) > 1){
+        if (second_utg->get_front() == second_node){
+            second_utg->pop_front();
+            this->free_unitig_if_empty(second_utg);
+        }else{
+            assert(second_utg->get_back() == second_node);
+            second_utg->pop_back();
+            this->free_unitig_if_empty(second_utg);
+        }
+        this->create_unitig_for_node(second_node);
+    }
 }
 
 // the nodes of the second unitig will be dumped into the first unitig
@@ -455,7 +464,7 @@ void Graph::destroy_unitig(Unitig* to_remove){
     this->unitig_list[(size_t)to_remove->get_id()] = NULL;
     this->unitig_free_list.push_back(to_remove->get_id());
     // free all nodes
-    
+
     const std::vector<Node*> members = to_remove->view_nodes();
     for (size_t i{0}; i < members.size(); i++){
         this->destroy_node(members[i]);
