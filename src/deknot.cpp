@@ -9,7 +9,7 @@
 #include <string>
 
 //const int DEBUG_CHECKPOINTS[] = {1888, 1786, 1589, 1554, 1452, 1017, 968, 966, 964};
-const int DEBUG_CHECKPOINTS[] = {3, 27, 28, 29, 203};
+const int DEBUG_CHECKPOINTS[] = {212, 213};
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 
@@ -70,15 +70,6 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || (k_prime - init_k_prime) % 100 == 0 || std::find(std::begin(DEBUG_CHECKPOINTS), std::end(DEBUG_CHECKPOINTS), k_prime) != std::end(DEBUG_CHECKPOINTS))){
             std::string out_unitigs {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + ".gfa"};
             curr_graph->write_hpc_unitigs_to_gfa(out_unitigs, true);
-            //dk_graph_t* curr_gfa = curr_graph->convert_to_gfa_representation();
-            //char** curr_expanded = dk_expand_sequences(opt, reads_arr, n_reads, curr_gfa->unitigs, curr_gfa->n_unitigs);
-            //free HPC versions of the unitigs
-            //for (int i{0}; i < curr_gfa->n_unitigs; i++){
-        //      delete[] curr_gfa->unitigs[i];
-        //  }
-        //  curr_gfa->unitigs = curr_expanded;
-        //  dk_write_gfa(out_unitigs.c_str(), curr_gfa);
-        //  dk_graph_free(curr_gfa);
             std::string out_reads {std::string(opt->out_dir) + "/k" + std::to_string(k_prime) + "_reads.fa"};
             io::write_sequences(input_seqs, out_reads);
         }
