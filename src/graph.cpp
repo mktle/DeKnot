@@ -296,23 +296,37 @@ bool Graph::add_connection(KmerView& first, char first_orient, KmerView& second,
 
 void Graph::handle_self_connection(Node* node){
     Unitig* utg = node->get_unitig();
+    Unitig* new_utg = NULL;
     if (utg->num_nodes() > 1){
         // isolate node into its own unitig
-        Unitig* new_utg = NULL;
-        if (utg->get_front() != node){
+        if (utg->get_front() != node && utg->get_back() != node){
             new_utg = this->split_unitig(utg, node);
-        }
-        // case where node is on the end of the new unitig
-        if (new_utg != NULL && new_utg->get_back() == node){
-            new_utg->pop_back();
-            this->create_unitig_for_node(node);
-        }else if(utg->num_nodes() != 1 && utg->get_front() == node){
-            // case where node is at the beginning of the old unitig
-            utg->pop_front();
-            this->create_unitig_for_node(node);
+            // case where node is on the end of the new unitig
+            if (new_utg->get_back() == node){
+                new_utg->pop_back();
+                this->create_unitig_for_node(node);
+            }else{
+                assert(utg->get_front() == node);
+                // case where node is at the beginning of the old unitig
+                utg->pop_front();
+                this->create_unitig_for_node(node);
+            }
+        }else{
+            //either at the beginning or end of utg
+            if (utg->get_front() == node){
+                utg->pop_front();
+                this->create_unitig_for_node(node);
+            }else if(utg->get_back() == node){
+                utg->pop_back();
+                this->create_unitig_for_node(node);
+            }
         }
     }
     assert(node->get_unitig()->num_nodes() == 1);
+    utg->get_median_freq();
+    if (new_utg != NULL) utg->get_median_freq();
+    this->free_unitig_if_empty(utg);
+    if (new_utg != NULL) this->free_unitig_if_empty(new_utg);
 }
 
 void Graph::check_endpoints(Node* first_node, Node* second_node){
@@ -577,8 +591,8 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
         Unitig* neigh_utg = neigh_node->get_unitig();
         if (neigh_utg != curr_utg){
             if (neigh_utg->get_median_freq() < thresh){
-                bool compacted_graph = this->drop_unitig(sorted_list, curr_utg, neigh_utg);
-                if (compacted_graph) return true;
+                this->drop_unitig(sorted_list, curr_utg, neigh_utg);
+                return true;
             }else{
                 num_checked++;
                 if (lower_utg == NULL || neigh_utg->get_median_freq() < lowest_freq){
