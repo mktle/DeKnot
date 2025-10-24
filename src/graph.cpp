@@ -264,7 +264,9 @@ bool Graph::add_connection(KmerView& first, char first_orient, KmerView& second,
     Unitig* first_utg {first_node->get_unitig()};
     Unitig* second_utg {second_node->get_unitig()};
 
-    if (first_utg->node_is_endpoint(first_node) && second_utg->node_is_endpoint(second_node) && first_node->num_edges_in_dir(first_orient) == 1 && second_node->num_edges_in_dir(utils::reverse_orientation(second_orient)) == 1){
+    if (first_node == second_node){
+        this->handle_self_connection(first_node);
+    }else if (first_utg->node_is_endpoint(first_node) && second_utg->node_is_endpoint(second_node) && first_node->num_edges_in_dir(first_orient) == 1 && second_node->num_edges_in_dir(utils::reverse_orientation(second_orient)) == 1){
          // merge unitigs into one
         if (first_utg != second_utg){
             this->merge_unitigs(first_node, second_node);
@@ -290,6 +292,27 @@ bool Graph::add_connection(KmerView& first, char first_orient, KmerView& second,
         }
     }
     return true;
+}
+
+void Graph::handle_self_connection(Node* node){
+    Unitig* utg = node->get_unitig();
+    if (utg->num_nodes() > 1){
+        // isolate node into its own unitig
+        Unitig* new_utg = NULL;
+        if (utg->get_front() != node){
+            new_utg = this->split_unitig(utg, node);
+        }
+        // case where node is on the end of the new unitig
+        if (new_utg != NULL && new_utg->get_back() == node){
+            new_utg->pop_back();
+            this->create_unitig_for_node(node);
+        }else if(utg->num_nodes() != 1 && utg->get_front() == node){
+            // case where node is at the beginning of the old unitig
+            utg->pop_front();
+            this->create_unitig_for_node(node);
+        }
+    }
+    assert(node->get_unitig()->num_nodes() == 1);
 }
 
 void Graph::check_endpoints(Node* first_node, Node* second_node){

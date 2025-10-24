@@ -35,6 +35,7 @@ class Graph {
         bool check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min_span, SketchedSeq*& corrected_seq);
         bool add_sequence(SketchedSeq& input_seq, Graph* prev_graph);
         bool add_connection(KmerView& first, char first_orient, KmerView& second, char second_orient);
+        void handle_self_connection(Node* node);
         void check_endpoints(Node* first_node, Node* second_node);
 
         Unitig* split_unitig(Unitig* to_split, Node* breakpoint);

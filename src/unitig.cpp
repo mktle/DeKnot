@@ -77,9 +77,6 @@ void Unitig::drain_nodes(std::vector<Node*>& recipient, Node* breakpoint){
         recipient.push_back(this->nodes.front());
         this->nodes.erase(this->nodes.begin());
     }
-    // so far, this function is only called in the context of splitting unitigs
-    assert(this->nodes.front()->num_neighbors() == 3);
-
     // figure out whether the breakpoint should be popped into the new unitig (depends on direction of the edge that was just added)
     int num_forward {0};
     char prev_dir = 'X';
