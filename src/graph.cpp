@@ -668,12 +668,9 @@ bool Graph::drop_unitig(std::vector<Unitig*>& sorted_list, Node* curr_node, Unit
         sorted_list.erase(it);
     }
     // first handle special case where the dropped unitig is connected to curr unitig on both ends
-    if (curr_node->is_neighbors_with(neigh_utg->get_front()) && curr_node->is_neighbors_with(neigh_utg->get_back())){
-        std::cout << "FREEING " <<  neigh_utg->get_id() << std::endl;//mkl
+    if (neigh_utg->num_nodes() > 1 && curr_node->is_neighbors_with(neigh_utg->get_front()) && curr_node->is_neighbors_with(neigh_utg->get_back())){
         curr_node->remove_neighbor(neigh_utg->get_front());
-        if (neigh_utg->get_front() != neigh_utg->get_back()){
-            curr_node->remove_neighbor(neigh_utg->get_back());
-        }
+        curr_node->remove_neighbor(neigh_utg->get_back());
         this->destroy_unitig(neigh_utg);
         return false;
     }
