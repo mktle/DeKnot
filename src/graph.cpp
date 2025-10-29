@@ -592,7 +592,7 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
         Unitig* neigh_utg = neigh_node->get_unitig();
         if (neigh_utg != curr_utg){
             if (neigh_utg->get_median_freq() < thresh){
-                this->drop_unitig(sorted_list, curr_utg, neigh_utg);
+                this->drop_unitig(sorted_list, node_end, neigh_utg);
                 return true;
             }else{
                 num_checked++;
@@ -608,7 +608,7 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
     if (check_dinuc && node_end->end_is_dinucleotide() && num_checked == 2 && this->dinuc_topology(node_end, lower_utg)){
         std::cout << "Dropping based on dinucleotide criteria (utg " << lower_utg->get_id() << " dropped during check on utg" << curr_utg->get_id() << ")" << std::endl;
         assert(lower_utg != NULL);
-        bool compacted_graph = this->drop_unitig(sorted_list, curr_utg, lower_utg);
+        bool compacted_graph = this->drop_unitig(sorted_list, node_end, lower_utg);
         return compacted_graph;
     }
     return false;
@@ -661,11 +661,23 @@ bool Graph::dinuc_topology(Node* curr_end, Unitig* dropped_utg){
     return false;
 }
 
-bool Graph::drop_unitig(std::vector<Unitig*>& sorted_list, Unitig* curr_utg, Unitig* neigh_utg){
+bool Graph::drop_unitig(std::vector<Unitig*>& sorted_list, Node* curr_node, Unitig* neigh_utg){
+    Unitig* curr_utg = curr_node->get_unitig();
     auto it = std::find(sorted_list.begin(), sorted_list.end(), neigh_utg);
     if(it != sorted_list.end()){
         sorted_list.erase(it);
     }
+    // first handle special case where the dropped unitig is connected to curr unitig on both ends
+    if (curr_node->is_neighbors_with(neigh_utg->get_front()) && curr_node->is_neighbors_with(neigh_utg->get_back())){
+        std::cout << "FREEING " <<  neigh_utg->get_id() << std::endl;//mkl
+        curr_node->remove_neighbor(neigh_utg->get_front());
+        if (neigh_utg->get_front() != neigh_utg->get_back()){
+            curr_node->remove_neighbor(neigh_utg->get_back());
+        }
+        this->destroy_unitig(neigh_utg);
+        return false;
+    }
+
     bool compacted_front = this->disconnect_unitig_end(neigh_utg->get_front(), curr_utg, sorted_list);
     bool compacted_back;
     if (neigh_utg->get_front() == neigh_utg->get_back()){
@@ -686,7 +698,6 @@ bool Graph::disconnect_unitig_end(Node* remove_node, Unitig* keep_utg, std::vect
     assert(remove_utg->node_is_endpoint(remove_node));
 
     const std::vector<Edge> remove_neighbors = remove_node->view_neighbors();
-
     // remove the endpoint node from its neighbors' edges
     bool compacted {false};
     for (size_t i{0}; i < remove_neighbors.size(); i++){
