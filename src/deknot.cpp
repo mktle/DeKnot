@@ -9,7 +9,7 @@
 #include <string>
 
 //const int DEBUG_CHECKPOINTS[] = {1888, 1786, 1589, 1554, 1452, 1017, 968, 966, 964};
-const int DEBUG_CHECKPOINTS[] = {3, 9, 10};
+const int DEBUG_CHECKPOINTS[] = {3, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90};
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 
@@ -192,7 +192,7 @@ char** dk_expand_sequences(dk_opt_t* opt, char** reads_arr, int n_reads, char** 
         std::string final_seq {""};
         for (size_t j{0}; j < hpc_tallies[i].len; j++){
             // some positions may not have coverage due to being at the end of a unitig
-            if (hpc_tallies[i].coverages[j] == 0){
+            if (hpc_tallies[i].coverages[j] < 3){
                 if (j == 0){
                     std::cout << "[hpc::expand_sequences] trimming start of unitig " << i << std::endl;
                     continue;

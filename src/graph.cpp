@@ -104,6 +104,8 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                 }
                 in_dropped = false;
                 dropped_start_idx = -1;
+            }else{
+                curr_span++;
             }
         }else if (!in_dropped){
             //on a new section of dropped region
