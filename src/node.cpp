@@ -225,7 +225,7 @@ bool Node::end_is_dinucleotide(){
 
 void Node::print_kmers(){
     if (this->ksyncmer.flip){
-        for (int i{(int)this->ksyncmer.kmers.size()}; i >= 0 ; i--){
+        for (int i{(int)this->ksyncmer.kmers.size() - 1}; i >= 0 ; i--){
             std::cout << this->ksyncmer.kmers[(size_t)i] << std::endl;
         }
     }else{

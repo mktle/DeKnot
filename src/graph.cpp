@@ -136,7 +136,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
         corrected_seq = new SketchedSeq(orig_seq->name + "M", true);
         for (size_t j{0}; j < to_correct.size(); j++){
             // copy over the unaltered sequences
-            while (curr_orig_idx <= to_correct[j].start_idx){
+            while (curr_orig_idx <= to_correct[j].start_idx + check_k_prime - 2){
                 corrected_seq->kmers.push_back(orig_seq->kmers[curr_orig_idx]);
                 corrected_seq->flipped.push_back(orig_seq->flipped[curr_orig_idx]);
                 corrected_seq->unique_seq_len.push_back(orig_seq->unique_seq_len[curr_orig_idx]);
@@ -179,7 +179,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                     corrected_seq->unique_seq_len.push_back(unique_sl);
                 }
             }
-            curr_orig_idx = to_correct[j].end_idx + 2;
+            curr_orig_idx = to_correct[j].end_idx + check_k_prime;
         }
         while (curr_orig_idx < read_stop_idx){
             corrected_seq->kmers.push_back(orig_seq->kmers[curr_orig_idx]);

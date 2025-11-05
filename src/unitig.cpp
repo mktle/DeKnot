@@ -289,7 +289,7 @@ void Unitig::print_kmers(){
             assert(next_direction == REVERSE_ORIENTATION);
             std::string res;
             hash::hash_to_kmer(curr_node->ith_kmer(0), curr_node->ith_kmer_flipped(0), res);
-            std::cout << "(" << i + offset << ") " << curr_node->ith_kmer_flipped(0) << " " << res << " " << curr_node->ith_unique_seq_len(0) << std::endl;
+            std::cout << "(" << i + offset << ") " << curr_node->ith_kmer(0) << " " << res << " " << curr_node->ith_unique_seq_len(0) << std::endl;
         }
 
         if (i < this->nodes.size() - 1){
