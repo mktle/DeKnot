@@ -1,5 +1,6 @@
 #include "deknot.h"
 #include "graph.h"
+#include "hash.h"
 #include "io.h"
 
 #include <cassert>
@@ -8,8 +9,7 @@
 #include <fstream>
 #include <string>
 
-//const int DEBUG_CHECKPOINTS[] = {1888, 1786, 1589, 1554, 1452, 1017, 968, 966, 964};
-const int DEBUG_CHECKPOINTS[] = {3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 125, 150, 175};
+const int DEBUG_CHECKPOINTS[] = {3};
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 
@@ -35,6 +35,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
     /************************************************************
      * Initialization (convert to C++ structures, sketch reads) *
      ************************************************************/
+    hash::initialize_dinucleotide_hashes();
     std::vector<std::string> reads(reads_arr, reads_arr + n_reads);
     std::vector<std::string> names;
     if (read_names != NULL){
@@ -76,7 +77,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             io::write_sequences(input_seqs, out_reads);
         }
         int times {0};
-        bool check_dinuc {k_prime - init_k_prime > 200};
+        bool check_dinuc {k_prime - init_k_prime > 20};
         bool graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);
         while(graph_changed && times < 10){
             graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);

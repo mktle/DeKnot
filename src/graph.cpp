@@ -621,17 +621,17 @@ bool Graph::dinuc_topology(Node* curr_end, Unitig* dropped_utg){
     // if so, this is likely a dinucleotide error and not a real variant
     Unitig* curr_utg = curr_end->get_unitig();
     const std::vector<Edge> neighbors = curr_end->view_neighbors();
-    ankerl::unordered_dense::set<Unitig*> ignore_utgs;
-    ignore_utgs.insert(curr_utg);
+    ankerl::unordered_dense::set<Node*> seen_nodes;
+    seen_nodes.insert(curr_end);
     for (size_t i{0}; i < neighbors.size(); i++){
-        Unitig* neigh_utg = neighbors[i].neighbor->get_unitig();
+        Node* neigh_node = neighbors[i].neighbor;
+        Unitig* neigh_utg = neigh_node->get_unitig();
         if (neigh_utg != dropped_utg && neigh_utg != curr_utg){
-            ignore_utgs.insert(neigh_utg);
+            seen_nodes.insert(neigh_node);
+            seen_nodes.insert(neigh_utg->opposite_end(neigh_node));
         }
     }
-
     // perform a graph search
-    ankerl::unordered_dense::set<Node*> seen_nodes;
     std::queue<Node*> to_check;
     to_check.push(curr_utg->opposite_end(curr_end));
     seen_nodes.insert(curr_end);
@@ -643,12 +643,11 @@ bool Graph::dinuc_topology(Node* curr_end, Unitig* dropped_utg){
         for (size_t i{0}; i < curr_neighbors.size(); i++){
             Node* neigh_node = curr_neighbors[i].neighbor;
             Unitig* neigh_utg = neigh_node->get_unitig();
-            if (neigh_node->get_unitig() != neigh_utg){
+            if (curr_node->get_unitig() != neigh_utg){
                 if (neigh_utg == dropped_utg){
                     return true;
                 }
-
-                if (ignore_utgs.find(neigh_node->get_unitig()) == ignore_utgs.end() && seen_nodes.find(neigh_node) == seen_nodes.end()){
+                if (seen_nodes.find(neigh_node) == seen_nodes.end()){
                     seen_nodes.insert(neigh_node);
                     to_check.push(neigh_node);
                 }

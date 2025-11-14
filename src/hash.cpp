@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstring>
 
+ankerl::unordered_dense::set<uint64_t> DINUCLEOTIDE_SUBHASHES{};
 const char val_to_base[] = "ACGT";
 
 bool hash::hash_entire_kmer(uint64_t& curr_hash, uint64_t& rc_hash, std::string& kmer, int s, bool& is_syncmer){
@@ -124,4 +125,20 @@ void hash::prepend_to_seq_from_hash(uint64_t hash, bool flipped, int len, std::s
         }
     }
     ret_string = to_prepend + ret_string;
+}
+
+uint64_t hash::encode_subkmer(std::string& kmer) {
+    uint64_t hash = 0;
+    for (char c : kmer) {
+        hash = (hash << 2) | base_to_val(c);
+    }
+    return hash;
+}
+
+void hash::initialize_dinucleotide_hashes(){
+    std::vector<std::string> to_hash = {"ACACAC", "AGAGAG", "ATATAT", "CACACA", "CGCGCG", "CTCTCT", "GAGAGA", "GCGCGC", "GTGTGT", "TATATA", "TCTCTC", "TGTGTG" };
+    for (size_t i{0}; i < to_hash.size(); i++){
+        DINUCLEOTIDE_SUBHASHES.insert(hash::encode_subkmer(to_hash[i]));
+    }
+
 }
