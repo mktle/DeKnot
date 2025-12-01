@@ -530,6 +530,38 @@ void Graph::create_unitig_for_node(Node* node){
     node->assign_unitig(new_utg);
 }
 
+void Graph::trim_tips(){
+    bool changed = true;
+    while(changed){
+        changed = false;
+        std::vector<Unitig*> sorted_unitigs;
+        for (size_t i{0}; i < this->unitig_list.size(); i++){
+            Unitig* utg = this->unitig_list[i];
+            if (utg != NULL){
+                utg->update_median_freq();
+                sorted_unitigs.push_back(utg);
+            }
+        }
+        std::sort(sorted_unitigs.begin(), sorted_unitigs.end(), compare_unitigs);
+
+        while(sorted_unitigs.size() > 0){
+            Unitig* utg = sorted_unitigs.back();
+            Node* keep_node;
+            Node* inner_end = utg->get_tip_inner_end(keep_node);
+            if (inner_end != NULL){
+                assert(keep_node != NULL);
+                Unitig* keep_utg = keep_node->get_unitig();
+                if (utg->get_median_freq() < 0.5 * keep_utg->get_median_freq() && utg->num_nodes() < 500){
+                    changed = true;
+                    this->disconnect_unitig_end(inner_end, keep_utg, sorted_unitigs);
+                    this->destroy_unitig(utg);
+                }
+            }
+            sorted_unitigs.pop_back();
+        }
+    }
+}
+
 void Graph::remove_floaters(int threshold){
     for (size_t i{0}; i < this->unitig_list.size(); i++){
         Unitig* utg = this->unitig_list[i];

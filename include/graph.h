@@ -52,6 +52,7 @@ class Graph {
         void add_unitig_to_list(Unitig* new_utg);
         void create_unitig_for_node(Node* node);
 
+        void trim_tips();
         void remove_floaters(int threshold);
         bool trim_low_freq_unitigs(int threshold, bool check_dinuc);
         bool trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>& sorted_list, bool check_dinuc);

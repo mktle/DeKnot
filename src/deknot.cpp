@@ -80,6 +80,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         bool check_dinuc {k_prime - init_k_prime > 20};
         bool graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);
         while(graph_changed && times < 10){
+            curr_graph->trim_tips();
             graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);
             times++;
         }
