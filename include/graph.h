@@ -20,8 +20,9 @@ struct DroppedBlock {
     Node* end2;
     size_t start_idx;
     size_t end_idx;
+    bool across_utgs;
 
-    DroppedBlock(Node* e1, Node* e2, size_t s_idx, size_t e_idx) : end1(e1), end2(e2), start_idx(s_idx), end_idx(e_idx) {}
+    DroppedBlock(Node* e1, Node* e2, size_t s_idx, size_t e_idx, bool a) : end1(e1), end2(e2), start_idx(s_idx), end_idx(e_idx), across_utgs(a) {}
 };
 
 class Graph {
@@ -33,6 +34,7 @@ class Graph {
         int num_nodes();
         int num_unitigs();
         bool check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min_span, SketchedSeq*& corrected_seq);
+        void correct_read_error_within_unitig(DroppedBlock& to_correct, SketchedSeq*& corrected_seq, size_t& curr_orig_idx, size_t k_prime);
         bool add_sequence(SketchedSeq& input_seq, Graph* prev_graph);
         bool add_connection(KmerView& first, char first_orient, KmerView& second, char second_orient);
         void handle_self_connection(Node* node);
