@@ -154,11 +154,12 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                 curr_orig_idx++;
             }
             assert(to_correct[j].end1->get_unitig() == to_correct[j].end2->get_unitig());
-            if (to_correct[j].across_utgs){
-                continue;
-            }else{
-                this->correct_read_error_within_unitig(to_correct[j], corrected_seq, curr_orig_idx, check_k_prime);
+            if (!to_correct[j].across_utgs){
+                this->correct_read_error_within_unitig(to_correct[j], corrected_seq);
+            }else if (to_correct[j].end1->get_unitig()->is_neighbors_with(to_correct[j].end2->get_unitig())){
+                this->correct_read_error_across_unitigs(to_correct[j], corrected_seq);
             }
+            curr_orig_idx = to_correct[j].end_idx + check_k_prime;
         }
         while (curr_orig_idx < read_stop_idx){
             corrected_seq->kmers.push_back(orig_seq->kmers[curr_orig_idx]);
@@ -172,7 +173,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
     return within_utg;
 }
 
-void Graph::correct_read_error_within_unitig(DroppedBlock& dropped_block, SketchedSeq*& corrected_seq, size_t& curr_orig_idx, size_t k_prime){
+void Graph::correct_read_error_within_unitig(DroppedBlock& dropped_block, SketchedSeq*& corrected_seq){
     // now we're in a dropped block, so retrieve the kmers for replacement
     // TODO: linear search is way too slow
     const std::vector<Node*> utg_nodes = dropped_block.end1->get_unitig()->view_nodes();
@@ -208,7 +209,94 @@ void Graph::correct_read_error_within_unitig(DroppedBlock& dropped_block, Sketch
             corrected_seq->unique_seq_len.push_back(unique_sl);
         }
     }
-    curr_orig_idx = dropped_block.end_idx + k_prime;
+}
+
+void Graph::correct_read_error_across_unitigs(DroppedBlock& dropped_block, SketchedSeq*& corrected_seq){
+    Unitig* utg1 = dropped_block.end1->get_unitig();
+    Unitig* utg2 = dropped_block.end2->get_unitig();
+    assert(utg1 != utg2);
+
+    /********************************************************
+     * Determine which parts of each unitig are on the walk *
+     ********************************************************/
+    bool utg1_frontside;
+    bool utg2_frontside;
+    
+    if (utg1->get_front()->is_neighbors_with(utg2->get_front())){
+        utg1_frontside = true;
+        utg2_frontside = true;
+    }else if(utg1->get_front()->is_neighbors_with(utg2->get_back())){
+        utg1_frontside = true;
+        utg2_frontside = false;
+    }else if(utg1->get_back()->is_neighbors_with(utg2->get_front())){
+        utg1_frontside = false;
+        utg2_frontside = true;
+    }else if(utg1->get_back()->is_neighbors_with(utg2->get_back())){
+        utg1_frontside = false;
+        utg2_frontside = false;
+    }else{
+        assert(0);
+    }
+
+    /***********************************
+     * Add kmers from the first unitig *
+     ***********************************/
+    const std::vector<Node*> utg1_nodes = utg1->view_nodes();
+    int k {0};
+    bool flipped {false};
+    int unique_sl {-1};
+    // find the endpoint in the unitig
+    while(utg1_nodes[(size_t)k] != dropped_block.end1){
+        k++;
+    }
+    if (utg1_frontside){
+        k--;
+        assert(k >= 0);
+        while(k >= 0){
+            corrected_seq->kmers.push_back(utg1_nodes[(size_t)k]->unique_kmer_from_neigh(utg1_nodes[(size_t)k+1], flipped, unique_sl));
+            corrected_seq->flipped.push_back(flipped);
+            corrected_seq->unique_seq_len.push_back(unique_sl);
+            k--;
+        }
+    }else{
+        k++;
+        assert(k < utg1_nodes.size());
+        while(k < utg1_nodes.size()){
+            corrected_seq->kmers.push_back(utg1_nodes[(size_t)k]->unique_kmer_from_neigh(utg1_nodes[(size_t)k-1], flipped, unique_sl));
+            corrected_seq->flipped.push_back(flipped);
+            corrected_seq->unique_seq_len.push_back(unique_sl);
+            k++;
+        }
+    }
+    /************************************
+     * Add kmers from the second unitig *
+     ************************************/
+    Node* last_utg1_node = utg1_frontside ? utg1->get_front() : utg1->get_back();
+    const std::vector<Node*> utg2_nodes = utg2->view_nodes();
+    if (utg2_frontside){
+        corrected_seq->kmers.push_back(utg2_nodes[0]->unique_kmer_from_neigh(last_utg1_node, flipped, unique_sl));
+        corrected_seq->flipped.push_back(flipped);
+        corrected_seq->unique_seq_len.push_back(unique_sl);
+        k = 1;
+        while(utg2_nodes[(size_t)k] != dropped_block.end2){
+            corrected_seq->kmers.push_back(utg2_nodes[(size_t)k]->unique_kmer_from_neigh(utg2_nodes[(size_t)k-1], flipped, unique_sl));
+            corrected_seq->flipped.push_back(flipped);
+            corrected_seq->unique_seq_len.push_back(unique_sl);
+            k++;
+        }
+    }else{
+        k = (int)utg2_nodes.size() - 1;
+        corrected_seq->kmers.push_back(utg2_nodes[(size_t)k]->unique_kmer_from_neigh(last_utg1_node, flipped, unique_sl));
+        corrected_seq->flipped.push_back(flipped);
+        corrected_seq->unique_seq_len.push_back(unique_sl);
+        k--;
+        while(utg2_nodes[(size_t)k] != dropped_block.end2){
+            corrected_seq->kmers.push_back(utg2_nodes[(size_t)k]->unique_kmer_from_neigh(utg2_nodes[(size_t)k+1], flipped, unique_sl));
+            corrected_seq->flipped.push_back(flipped);
+            corrected_seq->unique_seq_len.push_back(unique_sl);
+            k--;
+        }
+    }
 }
 
 bool Graph::add_sequence(SketchedSeq& input_seq, Graph* prev_graph){
@@ -739,12 +827,6 @@ bool Graph::drop_unitig(std::vector<Unitig*>& sorted_list, Node* curr_node, Unit
     }
     return false;
 }
-
-/*bool Graph::utgs_are_parallel(Unitig* utg1, Unitig* utg2){
-// check if they have the same neighbors on both endpoints
-Node* end1 = utg->get
-
-}*/
 
 // return true if base_utg gets merged with another unitig
 bool Graph::disconnect_unitig_end(Node* remove_node, Unitig* keep_utg, std::vector<Unitig*>& sorted_list){

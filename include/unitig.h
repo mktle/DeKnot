@@ -38,6 +38,7 @@ class Unitig{
         bool is_floating();
         Node* get_tip_inner_end(Node*& adj_node);
         char get_in_dir(Node* node_to_check);
+        bool is_neighbors_with(Unitig* check_utg);
 
         void list_nodes();
         void get_hpc_sequence(std::string& ret_seq);

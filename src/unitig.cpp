@@ -194,6 +194,14 @@ char Unitig::get_in_dir(Node* to_check){
     return 'X';
 }
 
+bool Unitig::is_neighbors_with(Unitig* check_utg){
+    return (this->get_front()->is_neighbors_with(check_utg->get_front())
+            || this->get_front()->is_neighbors_with(check_utg->get_back())
+            || this->get_back()->is_neighbors_with(check_utg->get_front())
+            || this->get_back()->is_neighbors_with(check_utg->get_back())
+            );
+}
+
 void Unitig::list_nodes(){
     for (size_t i{0}; i < this->nodes.size(); i++){
         std::cout << "(" << this->nodes[i]->get_node_id() << ") " << this->nodes[i]<< std::endl;

@@ -34,7 +34,8 @@ class Graph {
         int num_nodes();
         int num_unitigs();
         bool check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min_span, SketchedSeq*& corrected_seq);
-        void correct_read_error_within_unitig(DroppedBlock& to_correct, SketchedSeq*& corrected_seq, size_t& curr_orig_idx, size_t k_prime);
+        void correct_read_error_within_unitig(DroppedBlock& to_correct, SketchedSeq*& corrected_seq);
+        void correct_read_error_across_unitigs(DroppedBlock& dropped_block, SketchedSeq*& corrected_seq);
         bool add_sequence(SketchedSeq& input_seq, Graph* prev_graph);
         bool add_connection(KmerView& first, char first_orient, KmerView& second, char second_orient);
         void handle_self_connection(Node* node);
