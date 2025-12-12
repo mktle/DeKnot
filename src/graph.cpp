@@ -99,12 +99,9 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
             if (in_dropped){
                 assert(dropped_start_idx != -1);
                 // at the end of a dropped block, so add to our list
-                if (orig_seq->name == "m64011_190830_220126/37423134/ccsM"){//mkl
-                    std::cout << "finished dropped region, on utg" << curr_node->get_unitig()->get_id() << std::endl;//mkl
-                }//mkl
                 if (dropped_start_bound != curr_node){
-                    if(dropped_start_bound->get_unitig() == curr_node->get_unitig()){
-                        to_correct.emplace_back(dropped_start_bound, curr_node, dropped_start_idx, i - 1, false);
+                    if(dropped_start_bound->get_unitig() == curr_node->get_unitig() || dropped_start_bound->get_unitig()->is_neighbors_with(curr_node->get_unitig())){
+                        to_correct.emplace_back(dropped_start_bound, curr_node, dropped_start_idx, i - 1, dropped_start_bound->get_unitig() != curr_node->get_unitig());
                     }
                 }
                 in_dropped = false;
@@ -118,9 +115,6 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
             in_dropped = true;
             dropped_start_bound = prev_node;
             dropped_start_idx = (int)i;
-            if (orig_seq->name == "m64011_190830_220126/37423134/ccsM"){//mkl
-                std::cout << "starting new dropped region from utg" << prev_node->get_unitig()->get_id() << std::endl;//mkl
-            }//mkl
         }
 
         if (curr_node == NULL || (prev_node != NULL && curr_node->get_unitig() != prev_node->get_unitig())){
@@ -136,9 +130,6 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
 
     // check if we need to drop other end of read because it contains an error
     size_t read_stop_idx = in_dropped ? (size_t)dropped_start_idx : orig_seq->kmers.size();
-    if (orig_seq->name == "m64011_190830_220126/37423134/ccsM"){//mkl
-        std::cout << "num blocks to try to correct: " << to_correct.size() << std::endl;//mkl
-    }//mkl
 
     /**************************************
      * Correction on underlying sequences *
@@ -153,7 +144,6 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                 corrected_seq->unique_seq_len.push_back(orig_seq->unique_seq_len[curr_orig_idx]);
                 curr_orig_idx++;
             }
-            assert(to_correct[j].end1->get_unitig() == to_correct[j].end2->get_unitig());
             if (!to_correct[j].across_utgs){
                 this->correct_read_error_within_unitig(to_correct[j], corrected_seq);
             }else if (to_correct[j].end1->get_unitig()->is_neighbors_with(to_correct[j].end2->get_unitig())){
@@ -260,7 +250,6 @@ void Graph::correct_read_error_across_unitigs(DroppedBlock& dropped_block, Sketc
         }
     }else{
         k++;
-        assert(k < utg1_nodes.size());
         while(k < utg1_nodes.size()){
             corrected_seq->kmers.push_back(utg1_nodes[(size_t)k]->unique_kmer_from_neigh(utg1_nodes[(size_t)k-1], flipped, unique_sl));
             corrected_seq->flipped.push_back(flipped);
