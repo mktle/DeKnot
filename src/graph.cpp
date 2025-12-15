@@ -241,7 +241,6 @@ void Graph::correct_read_error_across_unitigs(DroppedBlock& dropped_block, Sketc
     }
     if (utg1_frontside){
         k--;
-        assert(k >= 0);
         while(k >= 0){
             corrected_seq->kmers.push_back(utg1_nodes[(size_t)k]->unique_kmer_from_neigh(utg1_nodes[(size_t)k+1], flipped, unique_sl));
             corrected_seq->flipped.push_back(flipped);
@@ -260,29 +259,24 @@ void Graph::correct_read_error_across_unitigs(DroppedBlock& dropped_block, Sketc
     /************************************
      * Add kmers from the second unitig *
      ************************************/
-    Node* last_utg1_node = utg1_frontside ? utg1->get_front() : utg1->get_back();
+    Node* last_node = utg1_frontside ? utg1->get_front() : utg1->get_back();
     const std::vector<Node*> utg2_nodes = utg2->view_nodes();
     if (utg2_frontside){
-        corrected_seq->kmers.push_back(utg2_nodes[0]->unique_kmer_from_neigh(last_utg1_node, flipped, unique_sl));
-        corrected_seq->flipped.push_back(flipped);
-        corrected_seq->unique_seq_len.push_back(unique_sl);
-        k = 1;
-        while(utg2_nodes[(size_t)k] != dropped_block.end2){
-            corrected_seq->kmers.push_back(utg2_nodes[(size_t)k]->unique_kmer_from_neigh(utg2_nodes[(size_t)k-1], flipped, unique_sl));
+        k = 0;
+        while(utg2_nodes[(size_t)k]->get_node_id() != dropped_block.end2->get_node_id()){
+            corrected_seq->kmers.push_back(utg2_nodes[(size_t)k]->unique_kmer_from_neigh(last_node, flipped, unique_sl));
             corrected_seq->flipped.push_back(flipped);
             corrected_seq->unique_seq_len.push_back(unique_sl);
+            last_node = utg2_nodes[(size_t)k];
             k++;
         }
     }else{
         k = (int)utg2_nodes.size() - 1;
-        corrected_seq->kmers.push_back(utg2_nodes[(size_t)k]->unique_kmer_from_neigh(last_utg1_node, flipped, unique_sl));
-        corrected_seq->flipped.push_back(flipped);
-        corrected_seq->unique_seq_len.push_back(unique_sl);
-        k--;
-        while(utg2_nodes[(size_t)k] != dropped_block.end2){
-            corrected_seq->kmers.push_back(utg2_nodes[(size_t)k]->unique_kmer_from_neigh(utg2_nodes[(size_t)k+1], flipped, unique_sl));
+        while(utg2_nodes[(size_t)k]->get_node_id() != dropped_block.end2->get_node_id()){
+            corrected_seq->kmers.push_back(utg2_nodes[(size_t)k]->unique_kmer_from_neigh(last_node, flipped, unique_sl));
             corrected_seq->flipped.push_back(flipped);
             corrected_seq->unique_seq_len.push_back(unique_sl);
+            last_node = utg2_nodes[(size_t)k];
             k--;
         }
     }

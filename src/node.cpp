@@ -77,13 +77,13 @@ uint64_t Node::unique_kmer_from_neigh(Node* neigh, bool& flipped, int& unique_se
     for (int i{0}; i < this->neighbors.size(); i++){
         if (this->neighbors[(size_t)i].neighbor == neigh){
             if (this->neighbors[(size_t)i].self_orientation == FORWARD_ORIENTATION){
-                flipped = this->ith_kmer_flipped(this->num_kmers() - 1);
-                unique_seq_len = this->ith_unique_seq_len(this->num_kmers() - 2);
-                return this->get_back_hash();
+                flipped = !this->ith_kmer_flipped(0);
+                unique_seq_len = this->ith_unique_seq_len(0);
+                return this->get_front_hash();
             }
-            flipped = !this->ith_kmer_flipped(0);
-            unique_seq_len = this->ith_unique_seq_len(0);
-            return this->get_front_hash();
+            flipped = this->ith_kmer_flipped(this->num_kmers() - 1);
+            unique_seq_len = this->ith_unique_seq_len(this->num_kmers() - 2);
+            return this->get_back_hash();
         }
     }
     assert(0);
