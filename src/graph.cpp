@@ -175,7 +175,7 @@ void Graph::correct_read_error_within_unitig(DroppedBlock& dropped_block, Sketch
             // within the region we are copying
             bool flipped;
             int unique_sl;
-            corrected_seq->kmers.push_back(utg_nodes[k]->unique_kmer_from_neigh(utg_nodes[k + 1], flipped, unique_sl));
+            corrected_seq->kmers.push_back(utg_nodes[k]->unique_kmer_from_neigh(utg_nodes[k - 1], flipped, unique_sl));
             corrected_seq->flipped.push_back(flipped);
             corrected_seq->unique_seq_len.push_back(unique_sl);
         }else {
@@ -194,7 +194,7 @@ void Graph::correct_read_error_within_unitig(DroppedBlock& dropped_block, Sketch
         for (int k{first_idx - 1}; k > last_idx; k--){
             bool flipped {false};
             int unique_sl {-1};
-            corrected_seq->kmers.push_back(utg_nodes[(size_t)k]->unique_kmer_from_neigh(utg_nodes[(size_t)k-1], flipped, unique_sl));
+            corrected_seq->kmers.push_back(utg_nodes[(size_t)k]->unique_kmer_from_neigh(utg_nodes[(size_t)k + 1], flipped, unique_sl));
             corrected_seq->flipped.push_back(flipped);
             corrected_seq->unique_seq_len.push_back(unique_sl);
         }
