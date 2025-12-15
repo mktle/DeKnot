@@ -50,6 +50,7 @@ int Graph::num_unitigs(){
 //  run *after* graph is completed (i.e., in the next iteration)
 // check if the sequence is completely contained in a unitig from this previous iteration
 bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min_span, SketchedSeq*& corrected_seq){
+    ankerl::unordered_dense::map<int, int> utg_spans;
     std::vector<DroppedBlock> to_correct;
     size_t check_thresh = orig_seq->kmers.size() - check_k_prime + 1;
     size_t i {1};
@@ -72,14 +73,6 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
     }
     // where we will start copying sequence from (i.e., drop errors on ends of reads)
     size_t curr_orig_idx = i - 1;
-
-    // if a read is completely contained within a unitig, we can remove it
-    bool within_utg {true};
-
-    // to calculate iteration jump
-    // TODO: min span right now is a conservative lower bound because we don't account for correction
-    min_span = -1;
-    int curr_span {1};
 
     bool in_dropped {false};
     Node* dropped_start_bound = NULL;
@@ -106,9 +99,8 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                 }
                 in_dropped = false;
                 dropped_start_idx = -1;
-            }else{
-                curr_span++;
             }
+            utg_spans[curr_node->get_unitig()->get_id()]++;
         }else if (!in_dropped){
             //on a new section of dropped region
             assert(prev_node != NULL);
@@ -116,16 +108,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
             dropped_start_bound = prev_node;
             dropped_start_idx = (int)i;
         }
-
-        if (curr_node == NULL || (prev_node != NULL && curr_node->get_unitig() != prev_node->get_unitig())){
-            if (min_span == -1 || curr_span < min_span){
-                min_span = curr_span;
-            }
-            curr_span = 0;
-            within_utg = false;
-        }
         prev_node = curr_node;
-        curr_span++;
     }
 
     // check if we need to drop other end of read because it contains an error
@@ -160,7 +143,14 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
     }else{
         corrected_seq = NULL;
     }
-    return within_utg;
+    min_span = -1;
+    if (orig_seq->is_read){
+        for (auto const& [id, span] : utg_spans) {
+            if (min_span == -1 || span <  min_span) min_span = span;
+        }
+    }
+    std::cout << orig_seq->name << " " << min_span << std::endl;//mkl
+    return utg_spans.size() == 1;
 }
 
 void Graph::correct_read_error_within_unitig(DroppedBlock& dropped_block, SketchedSeq*& corrected_seq){
