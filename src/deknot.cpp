@@ -2,6 +2,7 @@
 #include "graph.h"
 #include "hash.h"
 #include "io.h"
+#include "phase.h"
 
 #include <cassert>
 #include <cmath>
@@ -9,7 +10,7 @@
 #include <fstream>
 #include <string>
 
-const int DEBUG_CHECKPOINTS[] = {3, 24, 25, 50, 75, 125, 150, 175};
+const int DEBUG_CHECKPOINTS[] = {3, 24, 25, 50, 75, 125, 150, 175, 312, 333, 335, 342, 389, 398};
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 
@@ -17,7 +18,7 @@ void dk_opt_init(dk_opt_t* opt){
     memset(opt, 0, sizeof(dk_opt_t));
     opt->s = 9;
     opt->init_k_prime = 350;
-    opt->max_iterations = 10000;
+    opt->max_iterations = 335;//mkl
     opt->compact_thresh = 4;
     opt->return_hpc_utg = 0;
     opt->out_dir = NULL;
@@ -112,6 +113,20 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         prev_graph = curr_graph;
         curr_graph = new Graph(k_prime);
     }
+    
+    phase::assign_initial_node_partitions(prev_graph, input_seqs);//mkl
+    std::cout << "Before:" << std::endl;//mkl
+    prev_graph->print_unitigs(true, false);//mkl
+    int i{1};
+    while(phase::reassign_partitions(prev_graph, input_seqs)){
+        std::cout << "Phasing round " << i << std::endl;//mkl
+        i++;
+    }
+    std::cout << "After:" << std::endl;//mkl
+    prev_graph->print_unitigs(true, false);//mkl
+    std::string out_reads {std::string(opt->out_dir) + "/final_reads.fa"};//mkl
+    io::write_sequences(input_seqs, out_reads);//mkl
+
     if (opt->out_dir != NULL){
         std::string out_hpc {std::string(opt->out_dir) + "/final_hpc.gfa"};
         prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);

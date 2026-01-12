@@ -39,6 +39,22 @@ class Unitig{
         Node* get_tip_inner_end(Node*& adj_node);
         char get_in_dir(Node* node_to_check);
         bool is_neighbors_with(Unitig* check_utg);
+            
+        int get_assignment();
+        void set_assignment(int id);
+        Unitig* get_parallel_utg();
+        void set_parallel_utg(Unitig* utg);
+        bool get_checked_bubble();
+        void set_bubble_check(bool set_check);
+        bool get_in_bubble();
+        void set_in_bubble(bool set_bubble);
+
+        void determine_parallel();
+        void determine_bubble(std::vector<Unitig*>& parallel_utgs);
+        void determine_split_end(std::vector<Unitig*>& parallel_utgs);
+        void add_read(SketchedSeq*);
+        void assign_reads();
+        bool tally_assignment();
 
         void list_nodes();
         void get_hpc_sequence(std::string& ret_seq);
@@ -50,6 +66,17 @@ class Unitig{
         int index;
         float median_freq;
         float base_freq;
+        /***************
+         * For phasing *
+         ***************/
+        std::vector<SketchedSeq*> aligned_seqs;
+        bool checked_bubble;
+        // true if one side of a basic bubble (i.e., not checking for larger bubbles)
+        bool in_bubble;
+        // only set if in_bubble is true
+        Unitig* parallel_utg;
+        // haplotype assignment
+        int assignment;
 };
 
 bool compare_unitigs(Unitig* a, Unitig* b);

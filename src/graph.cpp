@@ -149,7 +149,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
             if (min_span == -1 || span <  min_span) min_span = span;
         }
     }
-    std::cout << orig_seq->name << " " << min_span << std::endl;//mkl
+    //std::cout << orig_seq->name << " " << min_span << std::endl;//mkl
     return utg_spans.size() == 1;
 }
 
@@ -1046,6 +1046,10 @@ void Graph::add_unitigs_to_input(std::vector<SketchedSeq*>& input_seqs, int s){
             syncmer::get_all_syncmers(seq_str, s, curr_seq->kmers, curr_seq->flipped, curr_seq->unique_seq_len, indices);
         }
     }
+}
+
+const std::vector<Unitig*>& Graph::view_unitigs(){
+    return this->unitig_list;
 }
 
 dk_graph_t* Graph::convert_to_gfa_representation(){

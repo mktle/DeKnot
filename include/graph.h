@@ -75,13 +75,13 @@ class Graph {
         void get_all_hpc_seqs(std::vector<std::string>& hpc_seqs);
         void add_unitigs_to_input(std::vector<SketchedSeq*>& input_seqs, int s);
 
-        void find_paths(std::vector<Unitig*> path1, std::vector<Unitig*> path2);
-        void path_to_sequence(std::vector<Unitig*> path, std::string& ret_string);
+        const std::vector<Unitig*>& view_unitigs();
 
         dk_graph_t* convert_to_gfa_representation();
 
-    private: std::vector<Node*> node_list;
+    private: 
         int k_prime;
+        std::vector<Node*> node_list;
         std::vector<int> node_free_list;
         std::vector<Unitig*> unitig_list;
         std::vector<int> unitig_free_list;

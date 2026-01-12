@@ -12,13 +12,15 @@ const int KMER_SIZE = 31;
 struct SketchedSeq{
     // for debugging purposes
     std::string name;
+    // as opposed to a unitig
     bool is_read;
     std::vector<uint64_t> kmers;
     std::vector<uint8_t> flipped;
     // track original position on HPC so we can later reconstruct sequence
     std::vector<int> unique_seq_len;
-    // as opposed to a unitig
-    SketchedSeq(std::string n, bool r) : name(n), is_read(r) {}
+    // for phasing
+    int assignment;
+    SketchedSeq(std::string n, bool r) : name(n), is_read(r), assignment(-1) {}
 };
 
 
