@@ -2,14 +2,12 @@
 
 #include <iostream>
 
-void phase::assign_initial_node_partitions(Graph* graph, std::vector<SketchedSeq*>& reads){
-    std::cout << "PHASING WITH " << reads.size() << " READS" << std::endl;//mkl
+void phase::initialize_unitigs_for_tagging(Graph* graph, std::vector<SketchedSeq*>& reads, std::vector<Unitig*>& sorted_unitigs){
     /************************
      * Map reads to unitigs *
      ************************/
     for (size_t i{0}; i < reads.size(); i++){
         if (reads[i]->is_read){
-            std::cout << "on read " << reads[i]->name << std::endl;//mkl
             ankerl::unordered_dense::set<Unitig*> alned_to;
             Unitig* track_utg {NULL};
             
@@ -27,7 +25,6 @@ void phase::assign_initial_node_partitions(Graph* graph, std::vector<SketchedSeq
             // now add read record to all unitigs
             for (const auto& aln_utg : alned_to) {
                 aln_utg->add_read(reads[i]);
-                std::cout << "adding " << reads[i]->name << " to utg" << aln_utg->get_id() << std::endl;//mkl
             }
         }
     }
@@ -35,8 +32,6 @@ void phase::assign_initial_node_partitions(Graph* graph, std::vector<SketchedSeq
     /*********************************************************
      * Tag unitigs as being part of bubbles or heterozygous  *
      *********************************************************/
-    // now start walk along the longest unitig
-    std::vector<Unitig*> sorted_unitigs;
     const std::vector<Unitig*> unitig_list = graph->view_unitigs();
     for (size_t i{0}; i < unitig_list.size(); i++){
         Unitig* utg = unitig_list[i];
@@ -56,13 +51,16 @@ void phase::assign_initial_node_partitions(Graph* graph, std::vector<SketchedSeq
         }
     }
     std::sort(sorted_unitigs.begin(), sorted_unitigs.end(), compare_unitigs);
+}
 
-    /****************************
-     * Choose an initial bubble *
-     ****************************/
+void phase::choose_initial_bubble(std::vector<Unitig*>& sorted_unitigs){
+    /***************************************
+     * Choose bubble to start phasing from *
+     ***************************************/
     Unitig* initial_utg = sorted_unitigs[0];
     size_t i{1};
     while(!initial_utg->get_in_bubble()){
+        assert(i < sorted_unitigs.size());
         initial_utg = sorted_unitigs[i];
         i++;
     }
@@ -117,4 +115,10 @@ bool phase::reassign_partitions(Graph* graph, std::vector<SketchedSeq*>& reads){
         }
     }
     return changed;
+}
+
+void phase::remove_tagged_unitigs(std::vector<Unitig*>& utg_list){
+    auto assigned = [](Unitig* utg) { return utg->get_assignment() != UNASSIGNED; };
+    auto new_end = std::remove_if(utg_list.begin(), utg_list.end(), assigned);
+    utg_list.erase(new_end, utg_list.end());
 }

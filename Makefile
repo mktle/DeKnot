@@ -1,6 +1,6 @@
 CC = g++
-#CFLAGS = -std=c++17 -O2 -DNEDEBUG -pedantic-errors -Wall -Wextra -Wconversion -Wno-sign-compare -Iinclude -fsanitize=address -g
-CFLAGS = -std=c++17 -O2 -DNEDEBUG -pedantic-errors -Wall -Wextra -Wconversion -Wno-sign-compare -Iinclude 
+#CFLAGS = -std=c++17 -O2 -DNDEBUG -pedantic-errors -Wall -Wextra -Wconversion -Wno-sign-compare -Iinclude -fsanitize=address -g
+CFLAGS = -std=c++17 -O2 -DNDEBUG -pedantic-errors -Wall -Wextra -Wconversion -Wno-sign-compare -Iinclude 
 
 # Directories
 SRC1_DIR = src

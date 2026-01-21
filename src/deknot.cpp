@@ -113,15 +113,22 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         prev_graph = curr_graph;
         curr_graph = new Graph(k_prime);
     }
-    
-    phase::assign_initial_node_partitions(prev_graph, input_seqs);//mkl
     std::cout << "Before:" << std::endl;//mkl
     prev_graph->print_unitigs(true, false);//mkl
-    int i{1};
-    while(phase::reassign_partitions(prev_graph, input_seqs)){
-        std::cout << "Phasing round " << i << std::endl;//mkl
-        i++;
+    
+    // this will be filled by next function call
+    std::vector<Unitig*> utg_list;
+    phase::initialize_unitigs_for_tagging(prev_graph, input_seqs, utg_list);
+    while(utg_list.size() > 0){
+        phase::choose_initial_bubble(utg_list);
+        int i{1};
+        while(phase::reassign_partitions(prev_graph, input_seqs)){
+            std::cout << "Phasing round " << i << std::endl;//mkl
+            i++;
+        }
+        phase::remove_tagged_unitigs(utg_list);
     }
+
     std::cout << "After:" << std::endl;//mkl
     prev_graph->print_unitigs(true, false);//mkl
     std::string out_reads {std::string(opt->out_dir) + "/final_reads.fa"};//mkl
