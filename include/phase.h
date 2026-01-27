@@ -17,6 +17,7 @@ namespace phase{
     void choose_initial_bubble(std::vector<Unitig*>& sorted_unitigs);
     bool reassign_partitions(Graph* graph, std::vector<SketchedSeq*>& reads);
     void remove_tagged_unitigs(std::vector<Unitig*>& utg_list);
+    void get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_seqs);
 }
 
 #endif

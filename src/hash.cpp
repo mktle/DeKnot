@@ -61,6 +61,7 @@ uint64_t hash::base_to_val(char base){
     if (base == 'G') return 2;
     if (base == 'T') return 3;
     assert(0);
+    return 4;
 }
 
 uint64_t hash::base_to_rc_val(char base){
@@ -69,6 +70,7 @@ uint64_t hash::base_to_rc_val(char base){
     if (base == 'G') return 1;
     if (base == 'T') return 0;
     assert(0);
+    return 4;
 }
 
 void hash::hash_to_kmer(uint64_t hash, bool flipped, std::string& ret_string){

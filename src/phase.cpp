@@ -122,3 +122,45 @@ void phase::remove_tagged_unitigs(std::vector<Unitig*>& utg_list){
     auto new_end = std::remove_if(utg_list.begin(), utg_list.end(), assigned);
     utg_list.erase(new_end, utg_list.end());
 }
+
+void phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_seqs){
+    /***************************************************
+     * Identify which unitigs are at the end of a walk *
+     ***************************************************/
+    std::vector<Unitig*> hap1_endpoints;
+    std::vector<Unitig*> hap2_endpoints;
+    std::vector<Unitig*> het_endpoints;
+
+    const std::vector<Unitig*> utgs = graph->view_unitigs();
+    for (size_t i{0}; i < utgs.size(); i++){
+        if(utgs[i] != NULL){
+            assert(utgs[i]->get_front() != utgs[i]->get_back());
+            // subtract one for the neighbor on the same unitig
+            int front_neighs {utgs[i]->get_front()->num_neighbors() - 1};
+            int back_neighs {utgs[i]->get_back()->num_neighbors() - 1};
+            
+            if ((front_neighs == 0 && back_neighs > 0) || (back_neighs == 0 && front_neighs > 0)){
+                if (utgs[i]->get_assignment() == HET){
+                    het_endpoints.push_back(utgs[i]);
+                }else if (utgs[i]->get_assignment() == HAP1){
+                    hap1_endpoints.push_back(utgs[i]);
+                }else if (utgs[i]->get_assignment() == HAP2){
+                    hap2_endpoints.push_back(utgs[i]);
+                }
+            }
+        }
+    }
+    /**********************
+     * Get walk sequences *
+     **********************/
+    for (auto& endpoints : { hap1_endpoints, hap2_endpoints }) {
+        std::string walk_seq;
+        if (endpoints.size() == 0){
+            // if none in this hap, both ends must be heterozygous
+            assert(het_endpoints.size() > 0);
+            //Unitig* ;
+
+        }
+
+    }
+}

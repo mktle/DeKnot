@@ -87,6 +87,7 @@ uint64_t Node::unique_kmer_from_neigh(Node* neigh, bool& flipped, int& unique_se
         }
     }
     assert(0);
+    return 0;
 }
 
 int Node::num_kmers(){
@@ -232,7 +233,9 @@ void Node::print_kmers(){
         }
     }else{
         for (size_t i{0}; i < this->ksyncmer.kmers.size(); i++){
-            std::cout << "(" << i << ")" << this->ksyncmer.kmers[(size_t)i] << std::endl;
+            std::string res;
+            hash::hash_to_kmer(this->ith_kmer((int)i), this->ith_kmer_flipped((int)i), res);
+            std::cout << "(" << i << ") " << this->ksyncmer.kmers[(size_t)i] << " " << res << " " << this->ith_unique_seq_len((size_t)i) << std::endl;
         }
     }
 }
