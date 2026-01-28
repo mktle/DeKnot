@@ -25,6 +25,7 @@ class Unitig{
 
         void add_node_front(Node* to_add);
         void add_node_back(Node* to_add);
+        bool contains_node(Node* check);
 
         void drain_nodes(std::vector<Node*>& recipient, Node* breakpoint);
         void clear_nodes();

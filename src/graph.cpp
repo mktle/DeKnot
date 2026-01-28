@@ -149,7 +149,6 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
             if (min_span == -1 || span <  min_span) min_span = span;
         }
     }
-    //std::cout << orig_seq->name << " " << min_span << std::endl;//mkl
     return utg_spans.size() == 1;
 }
 
@@ -365,7 +364,12 @@ bool Graph::add_connection(KmerView& first, char first_orient, KmerView& second,
             bool second_orig_end = second_utg->node_is_endpoint(second_node);
             Unitig* new_utg = this->split_unitig(first_utg, first_node);
             if (same_utg && !second_orig_end){
-                this->split_unitig(new_utg, second_node);
+                if (first_utg->contains_node(second_node)){
+                    this->split_unitig(first_utg, second_node);
+                }else{
+                    assert(new_utg->contains_node(second_node));
+                    this->split_unitig(new_utg, second_node);
+                }
             }
             first_utg = first_node->get_unitig();
             second_utg = second_node->get_unitig();

@@ -10,7 +10,7 @@
 #include <fstream>
 #include <string>
 
-const int DEBUG_CHECKPOINTS[] = {3, 24, 25, 50, 75, 125, 150, 175, 312, 333, 335, 342, 389, 398};
+const int DEBUG_CHECKPOINTS[] = {3, 24};
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 
@@ -18,7 +18,7 @@ void dk_opt_init(dk_opt_t* opt){
     memset(opt, 0, sizeof(dk_opt_t));
     opt->s = 9;
     opt->init_k_prime = 350;
-    opt->max_iterations = 335;//mkl
+    opt->max_iterations = 1000;//mkl
     opt->compact_thresh = 4;
     opt->return_hpc_utg = 0;
     opt->out_dir = NULL;

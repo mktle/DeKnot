@@ -73,6 +73,15 @@ void Unitig::add_node_back(Node* to_add){
     this->nodes.push_back(to_add);
 }
 
+bool Unitig::contains_node(Node* check){
+    for (size_t i{0}; i < this->nodes.size(); i++){
+        if (this->nodes[i]->get_node_id() == check->get_node_id()){
+            return true;
+        }
+    }
+    return false;
+}
+
 void Unitig::clear_nodes(){
     this->nodes.clear();
 }
@@ -347,16 +356,13 @@ void Unitig::assign_reads(){
 }
 
 bool Unitig::tally_assignment(){
-    std::cout << "on utg" << this->get_id() << " with " << aligned_seqs.size() << std::endl;//mkl
     assert(this->get_assignment() != HOM && this->get_assignment() != DISCARDED);
     int num1 {0};
     int num2 {0};
     for (size_t i{0}; i < this->aligned_seqs.size(); i++){
-        std::cout << "assignment for " << this->aligned_seqs[i]->name << " is " << this->aligned_seqs[i]->assignment << std::endl;//mkl
         if (this->aligned_seqs[i]->assignment == HAP1) num1++;
         if (this->aligned_seqs[i]->assignment == HAP2) num2++;
     }
-    std::cout << "tallied to " << num1 << " " << num2 << std::endl;//mkl
     if (num1 > num2 && (this->get_assignment() == HAP2 || this->get_assignment() == UNASSIGNED)){
         this->set_assignment(HAP1);
         this->parallel_utg->set_assignment(HAP2);
