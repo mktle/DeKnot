@@ -131,8 +131,6 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
 
     std::cout << "After:" << std::endl;//mkl
     prev_graph->print_unitigs(true, false);//mkl
-    std::vector<std::string> ret_seqs;
-    phase::get_haplotype_sequences(prev_graph, ret_seqs);
 
     std::string out_reads {std::string(opt->out_dir) + "/final_reads.fa"};//mkl
     io::write_sequences(input_seqs, out_reads);//mkl
@@ -141,6 +139,11 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         std::string out_hpc {std::string(opt->out_dir) + "/final_hpc.gfa"};
         prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
     }
+    std::vector<std::string> phased_walks;//mkl
+    phase::get_haplotype_sequences(prev_graph, phased_walks);//mkl
+    std::string out_walks {std::string(opt->out_dir) + "/final_walks.fa"};//mkl
+    io::write_walks(phased_walks, out_walks);//mkl
+
     dk_graph_t* ret_graph = prev_graph->convert_to_gfa_representation();
     if (opt->return_hpc_utg == 0){
         char** expanded_sequences = dk_expand_sequences(opt, reads_arr, n_reads, ret_graph->unitigs, ret_graph->n_unitigs);

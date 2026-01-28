@@ -8,7 +8,7 @@
 
 const int UNASSIGNED = -1;
 const int DISCARDED = -2;
-const int HET = 0;
+const int HOM = 0;
 const int HAP1 = 1;
 const int HAP2 = 2;
 

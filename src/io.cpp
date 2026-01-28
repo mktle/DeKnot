@@ -26,3 +26,11 @@ void io::write_sequences(std::vector<SketchedSeq*>& seqs, std::string out_path){
     }
     out_file.close();
 }
+
+void io::write_walks(std::vector<std::string>& seqs, std::string out_path){
+    std::ofstream out_file(out_path);
+    for (size_t i{0}; i < seqs.size(); i++){
+        out_file << ">unitig" << i << '\n';
+        out_file << seqs[i] << '\n';
+    }
+}

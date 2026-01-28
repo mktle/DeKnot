@@ -45,7 +45,7 @@ void phase::initialize_unitigs_for_tagging(Graph* graph, std::vector<SketchedSeq
                 if (utg->get_in_bubble()){
                     utg->set_assignment(UNASSIGNED);
                 }else{
-                    utg->set_assignment(HET);
+                    utg->set_assignment(HOM);
                 }
             }
         }
@@ -129,7 +129,7 @@ void phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_
      ***************************************************/
     std::vector<Unitig*> hap1_endpoints;
     std::vector<Unitig*> hap2_endpoints;
-    std::vector<Unitig*> het_endpoints;
+    std::vector<Unitig*> hom_endpoints;
 
     const std::vector<Unitig*> utgs = graph->view_unitigs();
     for (size_t i{0}; i < utgs.size(); i++){
@@ -140,8 +140,8 @@ void phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_
             int back_neighs {utgs[i]->get_back()->num_neighbors() - 1};
             
             if ((front_neighs == 0 && back_neighs > 0) || (back_neighs == 0 && front_neighs > 0)){
-                if (utgs[i]->get_assignment() == HET){
-                    het_endpoints.push_back(utgs[i]);
+                if (utgs[i]->get_assignment() == HOM){
+                    hom_endpoints.push_back(utgs[i]);
                 }else if (utgs[i]->get_assignment() == HAP1){
                     hap1_endpoints.push_back(utgs[i]);
                 }else if (utgs[i]->get_assignment() == HAP2){
@@ -153,14 +153,33 @@ void phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_
     /**********************
      * Get walk sequences *
      **********************/
+    int i{0};
     for (auto& endpoints : { hap1_endpoints, hap2_endpoints }) {
+        int hap_num = i == 0 ? HAP1 : HAP2;
+        std::cout << "On haplotype " << hap_num << std::endl;//mkl
         std::string walk_seq;
-        if (endpoints.size() == 0){
-            // if none in this hap, both ends must be heterozygous
-            assert(het_endpoints.size() > 0);
-            //Unitig* ;
-
+        // if none in this hap, both ends must be homozygous
+        Unitig* curr_utg = endpoints.size() == 0 ? hom_endpoints[0] : endpoints[0];
+        Node* opp_node = curr_utg->get_front()->neighbors_diff_utg() ? curr_utg->get_front() : curr_utg->get_back();
+        std::cout << "Starting at " << curr_utg->get_id() << std::endl;//mkl
+        curr_utg->get_hpc_sequence(walk_seq, opp_node == curr_utg->get_front(), false);
+        // while there are still more unitigs along the walk
+        while(opp_node->num_neighbors() > 1){
+            Node* next_end {NULL};
+            const std::vector<Edge>& opp_neighbors = opp_node->view_neighbors();
+            for (size_t i{0}; i < opp_neighbors.size(); i++){
+                Node* neigh = opp_neighbors[i].neighbor;
+                Unitig* neigh_utg = neigh->get_unitig();
+                if (neigh_utg->get_id() != opp_node->get_unitig()->get_id() && (neigh_utg->get_assignment() == hap_num || neigh_utg->get_assignment() == HOM)){
+                    next_end = neigh;
+                    break;
+                }
+            }
+            std::cout << "adding " << next_end->get_unitig()->get_id() << std::endl;//mkl
+            next_end->get_unitig()->get_hpc_sequence(walk_seq, next_end == next_end->get_unitig()->get_back(), true);
+            opp_node = next_end->get_unitig()->opposite_end(next_end);
         }
-
+        ret_seqs.emplace_back(walk_seq);
+        i++;
     }
 }
