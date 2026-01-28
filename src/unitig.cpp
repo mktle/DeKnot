@@ -348,7 +348,7 @@ void Unitig::assign_reads(){
 
 bool Unitig::tally_assignment(){
     std::cout << "on utg" << this->get_id() << " with " << aligned_seqs.size() << std::endl;//mkl
-    assert(this->get_assignment() != HET && this->get_assignment() != DISCARDED);
+    assert(this->get_assignment() != HOM && this->get_assignment() != DISCARDED);
     int num1 {0};
     int num2 {0};
     for (size_t i{0}; i < this->aligned_seqs.size(); i++){
@@ -402,18 +402,16 @@ void Unitig::get_hpc_sequence(std::string& ret_seq, bool reverse, bool append){
             // appending, so add just the last kmer from the first node, rather than the whole sequence
             for (size_t i{0}; i < neighbors.size(); i++){
                 if (neighbors[i].neighbor->get_unitig()->get_id() == curr_node->get_unitig()->get_id()){
-                    next_direction = neighbors[i].neighbor_orientation;
-                }
-                if (neighbors[i].neighbor->get_unitig()->get_id() != curr_node->get_unitig()->get_id()){
                     curr_direction = neighbors[i].self_orientation;
+                    next_direction = neighbors[i].neighbor_orientation;
                 }
             }
             assert(curr_direction != INVALID_ORIENTATION);
             assert(next_direction != INVALID_ORIENTATION);
-            if (next_direction == FORWARD_ORIENTATION){
+            if (curr_direction == FORWARD_ORIENTATION){
                 hash::add_to_seq_from_hash(curr_node->get_back_hash(), curr_node->ith_kmer_flipped(k_prime - 1), curr_node->ith_unique_seq_len(k_prime - 2), ret_seq);
             }else{
-                assert(next_direction == REVERSE_ORIENTATION);
+                assert(curr_direction == REVERSE_ORIENTATION);
                 hash::add_to_seq_from_hash(curr_node->get_front_hash(), !curr_node->ith_kmer_flipped(0), curr_node->ith_unique_seq_len(0), ret_seq);
             }
         }

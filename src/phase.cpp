@@ -156,12 +156,10 @@ void phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_
     int i{0};
     for (auto& endpoints : { hap1_endpoints, hap2_endpoints }) {
         int hap_num = i == 0 ? HAP1 : HAP2;
-        std::cout << "On haplotype " << hap_num << std::endl;//mkl
         std::string walk_seq;
         // if none in this hap, both ends must be homozygous
         Unitig* curr_utg = endpoints.size() == 0 ? hom_endpoints[0] : endpoints[0];
         Node* opp_node = curr_utg->get_front()->neighbors_diff_utg() ? curr_utg->get_front() : curr_utg->get_back();
-        std::cout << "Starting at " << curr_utg->get_id() << std::endl;//mkl
         curr_utg->get_hpc_sequence(walk_seq, opp_node == curr_utg->get_front(), false);
         // while there are still more unitigs along the walk
         while(opp_node->num_neighbors() > 1){
@@ -175,7 +173,6 @@ void phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_
                     break;
                 }
             }
-            std::cout << "adding " << next_end->get_unitig()->get_id() << std::endl;//mkl
             next_end->get_unitig()->get_hpc_sequence(walk_seq, next_end == next_end->get_unitig()->get_back(), true);
             opp_node = next_end->get_unitig()->opposite_end(next_end);
         }

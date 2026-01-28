@@ -121,10 +121,11 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
     
     while(utg_list.size() > 0){
         phase::choose_initial_bubble(utg_list);
-        int i{1};
+        int i{0};
         while(phase::reassign_partitions(prev_graph, input_seqs)){
-            std::cout << "Phasing round " << i << std::endl;//mkl
+            std::cout << "After phasing round " << i << std::endl;//mkl
             i++;
+            prev_graph->print_unitigs(true, false);//mkl
         }
         phase::remove_tagged_unitigs(utg_list);
     }
