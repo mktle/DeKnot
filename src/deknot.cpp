@@ -113,30 +113,12 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         prev_graph = curr_graph;
         curr_graph = new Graph(k_prime);
     }
-    std::cout << "Before:" << std::endl;//mkl
     prev_graph->print_unitigs(true, false);//mkl
     
     // this will be filled by next function call
     std::vector<Unitig*> utg_list;
     phase::initialize_unitigs_for_tagging(prev_graph, input_seqs, utg_list);
     
-
-    std::string temp1;//mkl
-    std::string temp2;//mkl
-    size_t idx {utg_list.size() - 1};//mkl
-    std::cout << "PRINTING UNITIG" << std::endl;//mkl
-    utg_list[idx]->print(false);//mkl
-    utg_list[idx]->print_kmers();//mkl
-    std::cout << "getting temp1"  << std::endl;//mkl
-    utg_list[idx]->get_hpc_sequence(temp1, false);//mkl
-    std::cout << "getting temp2"  << std::endl;//mkl
-    utg_list[idx]->get_hpc_sequence(temp2, true);//mkl
-    std::cout << "FORWARD:" << std::endl;//mkl
-    std::cout << temp1 << std::endl;//mkl
-    std::cout << "REVERSE:" << std::endl;//mkl
-    std::cout << temp2 << std::endl;//mkl
-    assert(0);//mkl
-
     while(utg_list.size() > 0){
         phase::choose_initial_bubble(utg_list);
         int i{1};

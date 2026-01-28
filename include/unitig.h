@@ -57,7 +57,7 @@ class Unitig{
         bool tally_assignment();
 
         void list_nodes();
-        void get_hpc_sequence(std::string& ret_seq, bool reverse);
+        void get_hpc_sequence(std::string& ret_seq, bool reverse, bool append);
         void print_kmers();
         void print(bool verbose);
 

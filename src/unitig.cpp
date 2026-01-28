@@ -375,9 +375,9 @@ void Unitig::list_nodes(){
     }
 }
 
-// TODO: allow for reversal
-void Unitig::get_hpc_sequence(std::string& ret_seq, bool reverse){
+void Unitig::get_hpc_sequence(std::string& ret_seq, bool reverse, bool append){
     if (this->nodes.size() == 1){
+        assert(!append);
         this->get_front()->get_hpc_sequence(ret_seq, reverse);
     }else{
         Node* curr_node = reverse ? this->get_back() : this->get_front();
@@ -386,27 +386,41 @@ void Unitig::get_hpc_sequence(std::string& ret_seq, bool reverse){
         char next_direction = INVALID_ORIENTATION;
         // figure out the direction to read the initial sequence
         const std::vector<Edge>& neighbors = curr_node->view_neighbors();
-        for (size_t i{0}; i < neighbors.size(); i++){
-            if (neighbors[i].neighbor->get_unitig()->get_id() == curr_node->get_unitig()->get_id()){
-                curr_direction = neighbors[i].self_orientation;
-                next_direction = neighbors[i].neighbor_orientation;
-                break;
+        // add the initial sequence
+        if (!append){
+            for (size_t i{0}; i < neighbors.size(); i++){
+                if (neighbors[i].neighbor->get_unitig()->get_id() == curr_node->get_unitig()->get_id()){
+                    curr_direction = neighbors[i].self_orientation;
+                    next_direction = neighbors[i].neighbor_orientation;
+                    break;
+                }
+            }
+            assert(curr_direction != INVALID_ORIENTATION);
+            assert(next_direction != INVALID_ORIENTATION);
+            curr_node->get_hpc_sequence(ret_seq, curr_direction == REVERSE_ORIENTATION);
+        }else{
+            // appending, so add just the last kmer from the first node, rather than the whole sequence
+            for (size_t i{0}; i < neighbors.size(); i++){
+                if (neighbors[i].neighbor->get_unitig()->get_id() == curr_node->get_unitig()->get_id()){
+                    next_direction = neighbors[i].neighbor_orientation;
+                }
+                if (neighbors[i].neighbor->get_unitig()->get_id() != curr_node->get_unitig()->get_id()){
+                    curr_direction = neighbors[i].self_orientation;
+                }
+            }
+            assert(curr_direction != INVALID_ORIENTATION);
+            assert(next_direction != INVALID_ORIENTATION);
+            if (next_direction == FORWARD_ORIENTATION){
+                hash::add_to_seq_from_hash(curr_node->get_back_hash(), curr_node->ith_kmer_flipped(k_prime - 1), curr_node->ith_unique_seq_len(k_prime - 2), ret_seq);
+            }else{
+                assert(next_direction == REVERSE_ORIENTATION);
+                hash::add_to_seq_from_hash(curr_node->get_front_hash(), !curr_node->ith_kmer_flipped(0), curr_node->ith_unique_seq_len(0), ret_seq);
             }
         }
-        assert(curr_direction != INVALID_ORIENTATION);
-        assert(next_direction != INVALID_ORIENTATION);
-        // add the initial sequence
-        curr_node->get_hpc_sequence(ret_seq, curr_direction == REVERSE_ORIENTATION);
-        std::cout << "FIRST NODE: " << std::endl;//mkl
-        std::cout << ret_seq << std::endl;//mkl
-        std::cout << "END FIRST" << std::endl;//mkl
-        curr_node->print_kmers();
         // now go through the rest of the nodes in the unitig and add the last kmer of that node
-
         if(!reverse){
             for (size_t i{1}; i < this->nodes.size(); i++){
                 curr_node = this->nodes[i];
-                std::cout << "forward iteration, on node " << curr_node->get_node_id() << std::endl;//mkl
                 // add the kmer that extends past the current node
                 if (next_direction == FORWARD_ORIENTATION){
                     hash::add_to_seq_from_hash(curr_node->get_back_hash(), curr_node->ith_kmer_flipped(k_prime - 1), curr_node->ith_unique_seq_len(k_prime - 2), ret_seq);
@@ -437,18 +451,13 @@ void Unitig::get_hpc_sequence(std::string& ret_seq, bool reverse){
             int i = (int)this->nodes.size() - 2;
             for (; i >= 0; i--){
                 curr_node = this->nodes[(size_t)i];
-                std::cout << "backward iteration, on node " << curr_node->get_node_id() << std::endl;//mkl
                 curr_node->print_kmers();//mkl
-                // add the kmer that extends past the current node
+                                         // add the kmer that extends past the current node
                 if (next_direction == FORWARD_ORIENTATION){
                     hash::add_to_seq_from_hash(curr_node->get_back_hash(), curr_node->ith_kmer_flipped(k_prime - 1), curr_node->ith_unique_seq_len(k_prime - 2), ret_seq);
-                    std::cout << "adding in FORWARD_ORIENTATION, now: " << ret_seq << std::endl;//mkl
-                    std::cout << "hash is " << curr_node->get_back_hash() << ", flipped is " << curr_node->ith_kmer_flipped(k_prime - 1) << ", unique seq len is " << curr_node->ith_unique_seq_len(k_prime - 2) << std::endl;//mkl
                 }else{
                     assert(next_direction == REVERSE_ORIENTATION);
                     hash::add_to_seq_from_hash(curr_node->get_front_hash(), !curr_node->ith_kmer_flipped(0), curr_node->ith_unique_seq_len(0), ret_seq);
-                    std::cout << "adding in BACKWARD_ORIENTATION, now: " << ret_seq << std::endl;//mkl
-                    std::cout << "hash is " << curr_node->get_front_hash() << ", flipped is " << !curr_node->ith_kmer_flipped(0) << ", unique seq len is " << curr_node->ith_unique_seq_len(0) << std::endl;//mkl
                 }
 
                 if (i > 0){

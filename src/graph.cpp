@@ -1008,7 +1008,7 @@ void Graph::print_unitigs(bool verbose, bool print_seq){
                 unitig_list[i]->print(false);
                 if (print_seq){
                     std::string sequence {""};
-                    this->unitig_list[i]->get_hpc_sequence(sequence, false);
+                    this->unitig_list[i]->get_hpc_sequence(sequence, false, false);
                     std::cout << sequence << std::endl;
                 }
             }else{
@@ -1026,7 +1026,7 @@ void Graph::get_all_hpc_seqs(std::vector<std::string>& hpc_seqs){
         Unitig* utg = this->unitig_list[i];
         std::string sequence{""};
         if (utg != NULL){
-            utg->get_hpc_sequence(sequence, false);
+            utg->get_hpc_sequence(sequence, false, false);
         }
         // need to push back an empty string for deleted unitigs as well so indices line up later
         hpc_seqs.push_back(std::move(sequence));
@@ -1038,7 +1038,7 @@ void Graph::add_unitigs_to_input(std::vector<SketchedSeq*>& input_seqs, int s){
         Unitig* utg = this->unitig_list[i];
         if (utg != NULL){
             std::string seq_str {""};
-            utg->get_hpc_sequence(seq_str, false);
+            utg->get_hpc_sequence(seq_str, false, false);
             std::vector<int> indices;
             std::string name {"utg" + std::to_string(i)};
             SketchedSeq* curr_seq = new SketchedSeq(name, false);
@@ -1079,7 +1079,7 @@ dk_graph_t* Graph::convert_to_gfa_representation(){
             // copy over unitig sequence 
             int new_id = new_utg_ids[(int)i];
             std::string sequence;
-            curr_utg->get_hpc_sequence(sequence, false);
+            curr_utg->get_hpc_sequence(sequence, false, false);
             gfa_rep->unitigs[new_id] = new char[sequence.size() + 1];
             std::strcpy(gfa_rep->unitigs[new_id], sequence.c_str());
 
