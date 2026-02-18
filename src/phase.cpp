@@ -77,13 +77,38 @@ bool phase::reassign_partitions(Graph* graph, std::vector<SketchedSeq*>& reads){
      * Reassign unitig labels *
      **************************/
     const std::vector<Unitig*> unitig_list = graph->view_unitigs();
+    // first reset iteration-specific trackers
+    for (size_t i{0}; i < unitig_list.size(); i++){
+        Unitig* utg = unitig_list[i];
+        if (utg != NULL){
+            utg->set_hap_flipped(false);
+        }
+    }
+
     for (size_t i{0}; i < unitig_list.size(); i++){
         Unitig* utg = unitig_list[i];
         if (utg != NULL && utg->get_in_bubble()){
-            bool flipped = utg->tally_assignment();
+            bool flipped = utg->reassign_haplotype();
             if (flipped) changed = true;
+            if (flipped) std::cout << "flipped utg " << utg->get_id() << std::endl;//mkl
         }
     }
+
+    bool any_flipped = false;
+    // check if any flipped haplotypes were later negated
+    if (changed){
+        for (size_t i{0}; i < unitig_list.size() ; i++){
+            Unitig* utg = unitig_list[i];
+            if (utg != NULL && utg->get_hap_flipped()){
+                std::cout << "have a flipped on utg" << utg->get_id() << std::endl;//mkl
+                any_flipped = true;
+                break;
+            }
+        }
+    }
+    changed = any_flipped;
+    if (!changed) return false;
+    std::cout << "final changed: " << changed << std::endl;//mkl
 
     /************************
      * Reassign read labels *
@@ -108,9 +133,11 @@ bool phase::reassign_partitions(Graph* graph, std::vector<SketchedSeq*>& reads){
             if (num1 > num2 && (reads[i]->assignment == HAP2 || reads[i]->assignment == UNASSIGNED)){
                 reads[i]->assignment = HAP1;
                 changed =  true;
+                std::cout << "changed to HAP1" << reads[i]->name << std::endl;//mkl
             }else if (num2 > num1 && (reads[i]->assignment == HAP1 || reads[i]->assignment == UNASSIGNED)){
                 reads[i]->assignment = HAP2;
                 changed = true;
+                std::cout << "changed to HAP2" << reads[i]->name << std::endl;//mkl
             }
         }
     }

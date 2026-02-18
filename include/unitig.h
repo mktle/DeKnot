@@ -55,7 +55,11 @@ class Unitig{
         void determine_split_end(std::vector<Unitig*>& parallel_utgs);
         void add_read(SketchedSeq*);
         void assign_reads();
-        bool tally_assignment();
+        void set_hap_flipped(bool set);
+        bool get_hap_flipped();
+        float get_frac_hap1();
+        void tally_reads();
+        bool reassign_haplotype();
 
         void list_nodes();
         void get_hpc_sequence(std::string& ret_seq, bool reverse, bool append);
@@ -78,6 +82,9 @@ class Unitig{
         Unitig* parallel_utg;
         // haplotype assignment
         int assignment;
+        // whether it has been changed in this iteration already
+        bool hap_flipped;
+        float frac_hap1;
 };
 
 bool compare_unitigs(Unitig* a, Unitig* b);

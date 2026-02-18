@@ -210,17 +210,20 @@ bool Node::end_is_dinucleotide(){
     int last_idx = this->num_kmers() - 1;
     for (int side : {0, last_idx}){
         uint64_t hash = this->ksyncmer.kmers[(size_t)side];
+
+
         // check substrings of size 6
         uint64_t least_sig = hash & ((1ULL << 12) - 1);
         uint64_t most_sig = hash >> 50; 
         for (uint64_t subhash : {least_sig, most_sig}){
             if (DINUCLEOTIDE_SUBHASHES.contains(subhash)){
+                std::cout << "RETURNING" << std::endl;//mkl
                 return true;
             }
             std::string st1, st2;
             hash::hash_to_kmer(least_sig, false, st1);
             hash::hash_to_kmer(most_sig, false, st2);
-
+            std::cout << st1 << " " << st2 << std::endl;//mkl
         }
     }
     return false;

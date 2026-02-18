@@ -53,7 +53,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
     ankerl::unordered_dense::map<int, int> utg_spans;
     std::vector<DroppedBlock> to_correct;
     size_t check_thresh = orig_seq->kmers.size() - check_k_prime + 1;
-    size_t i {1};
+    size_t i {0};
     /****************************************
      * Navigate to first non-null k-syncmer *
      ****************************************/
@@ -72,7 +72,8 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
         i++;
     }
     // where we will start copying sequence from (i.e., drop errors on ends of reads)
-    size_t curr_orig_idx = i - 1;
+    //size_t curr_orig_idx = i == 1 ? 0 : i;
+    size_t curr_orig_idx = i;
 
     bool in_dropped {false};
     Node* dropped_start_bound = NULL;
@@ -101,7 +102,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                 dropped_start_idx = -1;
             }
             utg_spans[curr_node->get_unitig()->get_id()]++;
-        }else if (!in_dropped){
+        }else if (!in_dropped)r
             //on a new section of dropped region
             assert(prev_node != NULL);
             in_dropped = true;
@@ -117,8 +118,11 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
     /**************************************
      * Correction on underlying sequences *
      **************************************/
-    if (to_correct.size() > 0){
+    if (to_correct.size() > 0 || in_dropped || curr_orig_idx != 0 || read_stop_idx != orig_seq->kmers.size()){
         corrected_seq = new SketchedSeq(orig_seq->name + "M", true);
+        if (orig_seq->name == "m84039_230117_233243_s1/105583716/ccs" || orig_seq->name == "m84039_230117_233243_s1/105583716/ccsM" || orig_seq->name == "m84039_230117_233243_s1/105583716/ccsMM" || orig_seq->name == "m84039_230117_233243_s1/105583716/ccsMMM" || orig_seq->name == "m84039_230117_233243_s1/105583716/ccsMMMM"){//mkl
+            std::cout << "CHANGING THIS READ " << orig_seq->name << std::endl;//mkl
+        }//mkl
         for (size_t j{0}; j < to_correct.size(); j++){
             // copy over the unaltered sequences
             while (curr_orig_idx <= to_correct[j].start_idx + check_k_prime - 2){
@@ -128,6 +132,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                 curr_orig_idx++;
             }
             if (!to_correct[j].across_utgs){
+                std::cout << "within unitig " << to_correct[j].end1->get_ << std::endl;//mkl
                 this->correct_read_error_within_unitig(to_correct[j], corrected_seq);
             }else if (to_correct[j].end1->get_unitig()->is_neighbors_with(to_correct[j].end2->get_unitig())){
                 this->correct_read_error_across_unitigs(to_correct[j], corrected_seq);

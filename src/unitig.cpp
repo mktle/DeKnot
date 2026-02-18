@@ -355,19 +355,61 @@ void Unitig::assign_reads(){
     }
 }
 
-bool Unitig::tally_assignment(){
-    assert(this->get_assignment() != HOM && this->get_assignment() != DISCARDED);
-    int num1 {0};
-    int num2 {0};
+void Unitig::set_hap_flipped(bool set){
+    this->hap_flipped = set;
+}
+
+bool Unitig::get_hap_flipped(){
+    return this->hap_flipped;
+}
+
+float Unitig::get_frac_hap1(){
+    return this->frac_hap1;
+}
+
+void Unitig::tally_reads(){
+    float num1 {0};
+    float num2 {0};
     for (size_t i{0}; i < this->aligned_seqs.size(); i++){
         if (this->aligned_seqs[i]->assignment == HAP1) num1++;
         if (this->aligned_seqs[i]->assignment == HAP2) num2++;
     }
-    if (num1 > num2 && (this->get_assignment() == HAP2 || this->get_assignment() == UNASSIGNED)){
+    this->frac_hap1 = num1 / (num1 + num2);
+}
+
+bool Unitig::reassign_haplotype(){
+    assert(this->get_assignment() != HOM && this->get_assignment() != DISCARDED);
+    this->tally_reads();
+
+    if (this->get_frac_hap1() > 0.5 && (this->get_assignment() == HAP2 || this->get_assignment() == UNASSIGNED)){
+        std::cout << "returning true (1) with " << this->get_frac_hap1() << " and assignment " << this->get_assignment() << std::endl;//mkl
+        // handle the case where reads for both unitigs vote for the same haplotype (and are just flipping back and forth)
+        if(this->parallel_utg->get_hap_flipped()){
+            this->parallel_utg->set_hap_flipped(false);
+            if (this->get_frac_hap1() > this->parallel_utg->get_frac_hap1()){
+                this->set_assignment(HAP1);
+                this->parallel_utg->set_assignment(HAP2);
+            }
+            std::cout << "but returning false" << std::endl;//mkl
+            return false;
+        }
+        this->set_hap_flipped(true);
         this->set_assignment(HAP1);
         this->parallel_utg->set_assignment(HAP2);
         return true;
-    }else if (num2 > num1 && (this->get_assignment() == HAP1 || this->get_assignment() == UNASSIGNED)){
+    }else if (this->get_frac_hap1() < 0.5 && (this->get_assignment() == HAP1 || this->get_assignment() == UNASSIGNED)){
+        std::cout << "returning true (2) with " << this->get_frac_hap1() << " and assignment " << this->get_assignment() << std::endl;//mkl
+        // handle the case where reads for both unitigs vote for the same haplotype (and are just flipping back and forth)
+        if(this->parallel_utg->get_hap_flipped()){
+            this->parallel_utg->set_hap_flipped(false);
+            if (this->get_frac_hap1() < this->parallel_utg->get_frac_hap1()){
+                this->set_assignment(HAP2);
+                this->parallel_utg->set_assignment(HAP1);
+            }
+            std::cout << "but returning false" << std::endl;//mkl
+            return false;
+        }
+        this->set_hap_flipped(true);
         this->set_assignment(HAP2);
         this->parallel_utg->set_assignment(HAP1);
         return true;
