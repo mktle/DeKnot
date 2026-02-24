@@ -102,7 +102,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                 dropped_start_idx = -1;
             }
             utg_spans[curr_node->get_unitig()->get_id()]++;
-        }else if (!in_dropped)r
+        }else if (!in_dropped){
             //on a new section of dropped region
             assert(prev_node != NULL);
             in_dropped = true;
@@ -120,7 +120,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
      **************************************/
     if (to_correct.size() > 0 || in_dropped || curr_orig_idx != 0 || read_stop_idx != orig_seq->kmers.size()){
         corrected_seq = new SketchedSeq(orig_seq->name + "M", true);
-        if (orig_seq->name == "m84039_230117_233243_s1/105583716/ccs" || orig_seq->name == "m84039_230117_233243_s1/105583716/ccsM" || orig_seq->name == "m84039_230117_233243_s1/105583716/ccsMM" || orig_seq->name == "m84039_230117_233243_s1/105583716/ccsMMM" || orig_seq->name == "m84039_230117_233243_s1/105583716/ccsMMMM"){//mkl
+        if (orig_seq->name == "m84039_230117_233243_s1/111543575/ccs" || orig_seq->name == "m84039_230117_233243_s1/111543575/ccsM"){//mkl
             std::cout << "CHANGING THIS READ " << orig_seq->name << std::endl;//mkl
         }//mkl
         for (size_t j{0}; j < to_correct.size(); j++){
@@ -132,7 +132,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                 curr_orig_idx++;
             }
             if (!to_correct[j].across_utgs){
-                std::cout << "within unitig " << to_correct[j].end1->get_ << std::endl;//mkl
+                //std::cout << "within unitig " << to_correct[j].end1->get_unitig()->get_id() << std::endl;//mkl
                 this->correct_read_error_within_unitig(to_correct[j], corrected_seq);
             }else if (to_correct[j].end1->get_unitig()->is_neighbors_with(to_correct[j].end2->get_unitig())){
                 this->correct_read_error_across_unitigs(to_correct[j], corrected_seq);
@@ -751,13 +751,23 @@ bool Graph::dinuc_topology(Node* curr_end, Unitig* dropped_utg){
             seen_nodes.insert(neigh_utg->opposite_end(neigh_node));
         }
     }
-    // perform a graph search
+    // perform a graph search for maximum of 10 iterations
     std::queue<Node*> to_check;
-    to_check.push(curr_utg->opposite_end(curr_end));
+    Node* start = curr_utg->opposite_end(curr_end);
+    seen_nodes.insert(start);
+    to_check.push(start);
+    to_check.push(NULL);
     seen_nodes.insert(curr_end);
+    int round_num {0};
     while(to_check.size() > 0){
         Node* curr_node {to_check.front()};
         to_check.pop();
+        if (curr_node == NULL){
+            round_num++;
+            if (round_num == 15) return false;
+            to_check.push(NULL);
+            continue;
+        }
 
         const std::vector<Edge> curr_neighbors = curr_node->view_neighbors();
         for (size_t i{0}; i < curr_neighbors.size(); i++){
@@ -1011,8 +1021,10 @@ void Graph::print_nodes(bool verbose){
 }
 
 void Graph::print_unitigs(bool verbose, bool print_seq){
+    std::cout << "printing?" << std::endl;//mkl
     for (size_t i{0}; i < this->unitig_list.size(); i++){
-        if (unitig_list[i] != NULL){
+        if (this->unitig_list[i] != NULL){
+            std::cout << i << " " << this->unitig_list[i] << std::endl;//mkl
             if (verbose){
                 unitig_list[i]->print(false);
                 if (print_seq){

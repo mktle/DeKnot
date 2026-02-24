@@ -10,7 +10,7 @@
 #include <fstream>
 #include <string>
 
-const int DEBUG_CHECKPOINTS[] = {3, 23, 24, 25, 26, 27, 28, 29,  50, 100, 150, 200, 250, 300, 342, 346, 347, 348};
+const int DEBUG_CHECKPOINTS[] = {3, 23, 24, 25, 26, 27, 28, 29, 32, 33, 34, 50, 100, 123, 124, 150, 200, 250, 300, 342, 346, 347, 348};
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 
@@ -18,7 +18,7 @@ void dk_opt_init(dk_opt_t* opt){
     memset(opt, 0, sizeof(dk_opt_t));
     opt->s = 9;
     opt->init_k_prime = 2;
-    opt->max_iterations = 360;
+    opt->max_iterations = 500;
     opt->compact_thresh = 4;
     opt->return_hpc_utg = 0;
     opt->out_dir = NULL;
@@ -78,7 +78,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             io::write_sequences(input_seqs, out_reads);
         }
         int times {0};
-        bool check_dinuc {k_prime - init_k_prime > 20};
+        bool check_dinuc {k_prime - init_k_prime > 200};
         bool graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);
         while(graph_changed && times < 10){
             curr_graph->trim_tips();
