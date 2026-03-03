@@ -630,6 +630,10 @@ void Graph::trim_tips(){
 
         while(sorted_unitigs.size() > 0){
             Unitig* utg = sorted_unitigs.back();
+            sorted_unitigs.pop_back();
+            if (utg == NULL){
+                continue;
+            }
             Node* keep_node;
             Node* inner_end = utg->get_tip_inner_end(keep_node);
             if (inner_end != NULL){
@@ -641,7 +645,6 @@ void Graph::trim_tips(){
                     this->destroy_unitig(utg);
                 }
             }
-            sorted_unitigs.pop_back();
         }
     }
 }
@@ -658,7 +661,6 @@ void Graph::remove_floaters(int threshold){
 bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc){
     // we will start by merging from longer unitigs
     // so first sort the unitigs by length
-
     // make sure the median frequency is updated for each unitig
     std::vector<Unitig*> sorted_unitigs;
     for (size_t i{0}; i < this->unitig_list.size(); i++){
@@ -670,11 +672,12 @@ bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc){
     }
     std::sort(sorted_unitigs.begin(), sorted_unitigs.end(), compare_unitigs);
     bool graph_changed {false};
-    while(sorted_unitigs.size() > 0){
-        Unitig* curr_utg = sorted_unitigs.front();
-        assert(curr_utg != NULL);
+    for (size_t idx{0}; idx < sorted_unitigs.size(); idx++){
+        Unitig* curr_utg = sorted_unitigs[idx];
+        if (curr_utg == NULL){
+            continue;
+        }
         assert(curr_utg->num_nodes() > 0);
-
         float current_thresh {2};
         while (current_thresh <= threshold){
             bool compacted_front = this->trim_low_freq_end(curr_utg->get_front(), current_thresh, sorted_unitigs, check_dinuc);
@@ -694,7 +697,6 @@ bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc){
                 current_thresh++;
             }
         }
-        sorted_unitigs.erase(sorted_unitigs.begin());
     }
     return graph_changed;
 }
@@ -792,7 +794,7 @@ bool Graph::drop_unitig(std::vector<Unitig*>& sorted_list, Node* curr_node, Unit
     Unitig* curr_utg = curr_node->get_unitig();
     auto it = std::find(sorted_list.begin(), sorted_list.end(), neigh_utg);
     if(it != sorted_list.end()){
-        sorted_list.erase(it);
+        *it = NULL;
     }
     // first handle special case where the dropped unitig is connected to curr unitig on both ends
     if (neigh_utg->num_nodes() > 1 && curr_node->is_neighbors_with(neigh_utg->get_front()) && curr_node->is_neighbors_with(neigh_utg->get_back())){
@@ -854,7 +856,7 @@ bool Graph::disconnect_unitig_end(Node* remove_node, Unitig* keep_utg, std::vect
                         }
                         auto it = std::find(sorted_list.begin(), sorted_list.end(), donor->get_unitig());
                         if (it != sorted_list.end()){
-                            sorted_list.erase(it);
+                            *it = NULL;
                         }
 
                         this->merge_unitigs(recipient, donor);
