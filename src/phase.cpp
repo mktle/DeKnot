@@ -29,6 +29,8 @@ void phase::initialize_unitigs_for_tagging(Graph* graph, std::vector<SketchedSeq
         }
     }
 
+    //TODO: can use the reads and their partition to update this classification
+    //TODO: look at each partition separately rather than resolving it jointly
     /*********************************************************
      * Tag unitigs as being part of bubbles or heterozygous  *
      *********************************************************/

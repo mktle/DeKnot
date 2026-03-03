@@ -120,9 +120,6 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
      **************************************/
     if (to_correct.size() > 0 || in_dropped || curr_orig_idx != 0 || read_stop_idx != orig_seq->kmers.size()){
         corrected_seq = new SketchedSeq(orig_seq->name + "M", true);
-        if (orig_seq->name == "m84039_230117_233243_s1/111543575/ccs" || orig_seq->name == "m84039_230117_233243_s1/111543575/ccsM"){//mkl
-            std::cout << "CHANGING THIS READ " << orig_seq->name << std::endl;//mkl
-        }//mkl
         for (size_t j{0}; j < to_correct.size(); j++){
             // copy over the unaltered sequences
             while (curr_orig_idx <= to_correct[j].start_idx + check_k_prime - 2){
@@ -132,7 +129,6 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                 curr_orig_idx++;
             }
             if (!to_correct[j].across_utgs){
-                //std::cout << "within unitig " << to_correct[j].end1->get_unitig()->get_id() << std::endl;//mkl
                 this->correct_read_error_within_unitig(to_correct[j], corrected_seq);
             }else if (to_correct[j].end1->get_unitig()->is_neighbors_with(to_correct[j].end2->get_unitig())){
                 this->correct_read_error_across_unitigs(to_correct[j], corrected_seq);
@@ -751,7 +747,7 @@ bool Graph::dinuc_topology(Node* curr_end, Unitig* dropped_utg){
             seen_nodes.insert(neigh_utg->opposite_end(neigh_node));
         }
     }
-    // perform a graph search for maximum of 10 iterations
+    // perform a graph search for maximum of 15 iterations
     std::queue<Node*> to_check;
     Node* start = curr_utg->opposite_end(curr_end);
     seen_nodes.insert(start);
@@ -1021,10 +1017,8 @@ void Graph::print_nodes(bool verbose){
 }
 
 void Graph::print_unitigs(bool verbose, bool print_seq){
-    std::cout << "printing?" << std::endl;//mkl
     for (size_t i{0}; i < this->unitig_list.size(); i++){
         if (this->unitig_list[i] != NULL){
-            std::cout << i << " " << this->unitig_list[i] << std::endl;//mkl
             if (verbose){
                 unitig_list[i]->print(false);
                 if (print_seq){

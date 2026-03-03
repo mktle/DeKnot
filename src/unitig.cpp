@@ -143,7 +143,7 @@ void Unitig::update_median_freq(){
     if (counts.size() % 2 == 0){
         this->median_freq = (float)(counts[counts.size() / 2] + counts[counts.size() / 2 - 1]) / (float)2.0;
     }else{
-        this->median_freq = (float)counts[counts.size() / 2];
+        this->median_freq = (float)counts[counts.size() / (float)2.0];
     }
 }
 

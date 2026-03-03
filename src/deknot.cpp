@@ -10,7 +10,7 @@
 #include <fstream>
 #include <string>
 
-const int DEBUG_CHECKPOINTS[] = {3, 23, 24, 25, 26, 27, 28, 29, 32, 33, 34, 50, 100, 123, 124, 150, 200, 250, 300, 342, 346, 347, 348};
+const int DEBUG_CHECKPOINTS[] = {3, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550};
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 
@@ -18,7 +18,7 @@ void dk_opt_init(dk_opt_t* opt){
     memset(opt, 0, sizeof(dk_opt_t));
     opt->s = 9;
     opt->init_k_prime = 2;
-    opt->max_iterations = 500;
+    opt->max_iterations = 700;
     opt->compact_thresh = 4;
     opt->return_hpc_utg = 0;
     opt->out_dir = NULL;
@@ -113,7 +113,6 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         prev_graph = curr_graph;
         curr_graph = new Graph(k_prime);
     }
-    prev_graph->print_unitigs(true, false);//mkl
     
     // this will be filled by next function call
     std::vector<Unitig*> utg_list;
@@ -123,14 +122,11 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         phase::choose_initial_bubble(utg_list);
         int i{0};
         while(phase::reassign_partitions(prev_graph, input_seqs)){
-            std::cout << "After phasing round " << i << std::endl;//mkl
             i++;
-            prev_graph->print_unitigs(true, false);//mkl
         }
         phase::remove_tagged_unitigs(utg_list);
     }
 
-    std::cout << "After:" << std::endl;//mkl
     prev_graph->print_unitigs(true, false);//mkl
 
     std::string out_reads {std::string(opt->out_dir) + "/final_reads.fa"};//mkl
@@ -272,19 +268,19 @@ void dk_graph_free(dk_graph_t* to_free){
 }
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose){
-    std::vector<size_t> remove_list;
+    ankerl::unordered_dense::set<size_t> remove_set;
     std::vector<SketchedSeq*> corrected_seqs;
     // check the sequences to see if they should be removed (and also calculate jump length)
     int lowest_span {-1};
     for (size_t seq_idx {0}; seq_idx < input_sequences.size(); seq_idx++){
         int curr_span {-1};
         if (input_sequences[seq_idx]->kmers.size() < k_prime){
-            remove_list.push_back(seq_idx);
+            remove_set.insert(seq_idx);
         }else if (prev_graph != NULL && input_sequences[seq_idx]->is_read){
             SketchedSeq* corrected_seq = NULL;
             bool contained = prev_graph->check_sequence(input_sequences[seq_idx], (size_t)k_prime - 1, curr_span, corrected_seq);
             if (contained || corrected_seq != NULL){
-                remove_list.push_back(seq_idx);
+                remove_set.insert(seq_idx);
                 if (corrected_seq != NULL){
                     corrected_seqs.push_back(corrected_seq);
                 }
@@ -310,14 +306,11 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
     }
     // actually add the sequences now
     for (size_t seq_idx {0}; seq_idx < input_sequences.size(); seq_idx++){
-        //TODO: switch from linear search for index
-        if((std::find(remove_list.begin(), remove_list.end(), seq_idx) == remove_list.end())  && (input_sequences[seq_idx]->kmers.size() < dbg->get_k_prime() || !dbg->add_sequence(*input_sequences[seq_idx], prev_graph))){
-            remove_list.push_back(seq_idx);
+        if((remove_set.find(seq_idx) == remove_set.end())  && (input_sequences[seq_idx]->kmers.size() < dbg->get_k_prime() || !dbg->add_sequence(*input_sequences[seq_idx], prev_graph))){
+            remove_set.insert(seq_idx);
         }
     }
-    std::sort(remove_list.begin(), remove_list.end());
 
-    // free the sequences that were removed from the previous graph
     for (size_t i{0}; i < prev_seqs.size(); i++){
         delete prev_seqs[i];
     }
@@ -325,9 +318,15 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
 
     // remove discarded sequences from the next graph's input
     // cannot delete them just yet because the next graph may need to access their nodes
-    for(int i{(int)remove_list.size() - 1}; i >= 0; i--){
-        prev_seqs.push_back(input_sequences[remove_list[(size_t)i]]);
-        input_sequences.erase(input_sequences.begin() + (long)remove_list[(size_t)i]);
+    std::vector<SketchedSeq*> kept;
+    kept.reserve(input_sequences.size() - remove_set.size());
+    for (size_t i{0}; i < input_sequences.size(); i++){
+        if (remove_set.count(i)){
+            prev_seqs.push_back(input_sequences[i]);
+        }else{
+            kept.push_back(input_sequences[i]);
+        }
     }
+    input_sequences = std::move(kept);
     return true;
 }
