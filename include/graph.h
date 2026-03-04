@@ -25,6 +25,13 @@ struct DroppedBlock {
     DroppedBlock(Node* e1, Node* e2, size_t s_idx, size_t e_idx, bool a) : end1(e1), end2(e2), start_idx(s_idx), end_idx(e_idx), across_utgs(a) {}
 };
 
+struct ConnectionSpan{
+    // arbitrarily assign a to be the unitig with the smaller ID
+    int utg_id_a;
+    int utg_id_b;
+    int span;
+};
+
 class Graph {
     public:
         Graph(int set_k_prime);
@@ -33,7 +40,7 @@ class Graph {
         void set_k_prime(int set_val);
         int num_nodes();
         int num_unitigs();
-        bool check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min_span, SketchedSeq*& corrected_seq, SketchedSeq*& split_seq);
+        bool check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, std::vector<ConnectionSpan>& connections, SketchedSeq*& corrected_seq, SketchedSeq*& split_seq);
         void correct_read_error_within_unitig(DroppedBlock& to_correct, SketchedSeq*& corrected_seq);
         void correct_read_error_across_unitigs(DroppedBlock& dropped_block, SketchedSeq*& corrected_seq);
         bool add_sequence(SketchedSeq& input_seq, Graph* prev_graph);

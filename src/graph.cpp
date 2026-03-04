@@ -49,8 +49,9 @@ int Graph::num_unitigs(){
 
 //  run *after* graph is completed (i.e., in the next iteration)
 // check if the sequence is completely contained in a unitig from this previous iteration
-bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min_span, SketchedSeq*& corrected_seq, SketchedSeq*& split_seq){
-    ankerl::unordered_dense::map<int, int> utg_spans;
+bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, std::vector<ConnectionSpan>& connections, SketchedSeq*& corrected_seq, SketchedSeq*& split_seq){
+    struct Segment {int utg_id; int span;};
+    std::vector<Segment> segments;
     std::vector<DroppedBlock> to_correct;
     size_t check_thresh = orig_seq->kmers.size() - check_k_prime + 1;
     size_t i {0};
@@ -104,7 +105,12 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                 in_dropped = false;
                 dropped_start_idx = -1;
             }
-            utg_spans[curr_node->get_unitig()->get_id()]++;
+            int curr_utg_id = curr_node->get_unitig()->get_id();
+            if (segments.empty() || segments.back().utg_id != curr_utg_id){
+                 segments.push_back({curr_utg_id, 1});
+            }else{
+                segments.back().span++;
+            }
         }else if (!in_dropped){
             //on a new section of dropped region
             assert(prev_node != NULL);
@@ -148,6 +154,17 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
     }else{
         corrected_seq = NULL;
     }
+
+    connections.clear();
+    if (orig_seq->is_read){
+        for (size_t j = 1; j < segments.size(); j++){
+            if (segments[j-1].utg_id != segments[j].utg_id){
+                int a = std::min(segments[j-1].utg_id, segments[j].utg_id);
+                int b = std::max(segments[j-1].utg_id, segments[j].utg_id);
+                connections.push_back({a, b, std::min(segments[j-1].span, segments[j].span)});
+            }
+        }
+    }
     // dropped portion but could not correct... if this happens too many times, remove
     if (to_correct.size() == 0 && first_drop_end != -1){
         orig_seq->num_tried++;
@@ -155,14 +172,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
             split_seq = syncmer::split_sequence(orig_seq, (size_t)first_drop_end, (size_t)second_drop_end);
         }
     }
-
-    min_span = -1;
-    if (orig_seq->is_read){
-        for (auto const& [id, span] : utg_spans) {
-            if (min_span == -1 || span <  min_span) min_span = span;
-        }
-    }
-    return utg_spans.size() == 1;
+    return segments.size() == 1;
 }
 
 void Graph::correct_read_error_within_unitig(DroppedBlock& dropped_block, SketchedSeq*& corrected_seq){
