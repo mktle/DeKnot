@@ -49,7 +49,7 @@ int Graph::num_unitigs(){
 
 //  run *after* graph is completed (i.e., in the next iteration)
 // check if the sequence is completely contained in a unitig from this previous iteration
-bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min_span, SketchedSeq*& corrected_seq){
+bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min_span, SketchedSeq*& corrected_seq, SketchedSeq*& split_seq){
     ankerl::unordered_dense::map<int, int> utg_spans;
     std::vector<DroppedBlock> to_correct;
     size_t check_thresh = orig_seq->kmers.size() - check_k_prime + 1;
@@ -57,12 +57,11 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
     /****************************************
      * Navigate to first non-null k-syncmer *
      ****************************************/
-
     Span<uint64_t> curr_kmers(orig_seq->kmers.data(), check_k_prime);
     char curr_orient = syncmer::canonical_syncmer(curr_kmers);
     KmerView curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION};
 
-    // go to the first node that was removed from the graph
+    // go to the first node that was not removed from the graph
     Node* curr_node = this->get_node_from_lookup_table(curr_canon);
     while (curr_node == NULL && i < check_thresh){
         curr_kmers = Span(orig_seq->kmers.data() + i, check_k_prime);
@@ -72,13 +71,15 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
         i++;
     }
     // where we will start copying sequence from (i.e., drop errors on ends of reads)
-    //size_t curr_orig_idx = i == 1 ? 0 : i;
     size_t curr_orig_idx = i;
 
     bool in_dropped {false};
     Node* dropped_start_bound = NULL;
     Node* prev_node = curr_node;
     int dropped_start_idx {-1};
+    
+    int first_drop_end {-1};
+    int second_drop_end {-1};
 
     /************************************************
      * Identify parts of the read that were dropped *
@@ -94,6 +95,8 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
                 assert(dropped_start_idx != -1);
                 // at the end of a dropped block, so add to our list
                 if (dropped_start_bound != curr_node){
+                    first_drop_end = (size_t)dropped_start_idx + check_k_prime - 1;
+                    second_drop_end = (size_t)i;
                     if(dropped_start_bound->get_unitig() == curr_node->get_unitig() || dropped_start_bound->get_unitig()->is_neighbors_with(curr_node->get_unitig())){
                         to_correct.emplace_back(dropped_start_bound, curr_node, dropped_start_idx, i - 1, dropped_start_bound->get_unitig() != curr_node->get_unitig());
                     }
@@ -120,6 +123,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
      **************************************/
     if (to_correct.size() > 0 || in_dropped || curr_orig_idx != 0 || read_stop_idx != orig_seq->kmers.size()){
         corrected_seq = new SketchedSeq(orig_seq->name + "M", true);
+        corrected_seq->num_tried = orig_seq->num_tried;
         for (size_t j{0}; j < to_correct.size(); j++){
             // copy over the unaltered sequences
             while (curr_orig_idx <= to_correct[j].start_idx + check_k_prime - 2){
@@ -144,6 +148,14 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min
     }else{
         corrected_seq = NULL;
     }
+    // dropped portion but could not correct... if this happens too many times, remove
+    if (to_correct.size() == 0 && first_drop_end != -1){
+        orig_seq->num_tried++;
+        if (orig_seq->num_tried == 10){
+            split_seq = syncmer::split_sequence(orig_seq, (size_t)first_drop_end, (size_t)second_drop_end);
+        }
+    }
+
     min_span = -1;
     if (orig_seq->is_read){
         for (auto const& [id, span] : utg_spans) {

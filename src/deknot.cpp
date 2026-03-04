@@ -278,15 +278,19 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
             remove_set.insert(seq_idx);
         }else if (prev_graph != NULL && input_sequences[seq_idx]->is_read){
             SketchedSeq* corrected_seq = NULL;
-            bool contained = prev_graph->check_sequence(input_sequences[seq_idx], (size_t)k_prime - 1, curr_span, corrected_seq);
+            SketchedSeq* split_seq = NULL;
+            bool contained = prev_graph->check_sequence(input_sequences[seq_idx], (size_t)k_prime - 1, curr_span, corrected_seq, split_seq);
             if (contained || corrected_seq != NULL){
                 remove_set.insert(seq_idx);
                 if (corrected_seq != NULL){
                     corrected_seqs.push_back(corrected_seq);
                 }
             }
+            if (split_seq != NULL){
+                corrected_seqs.push_back(split_seq);
+            }
         }
-        if (curr_span != -1){
+        if (curr_span != -1 && remove_set.find(seq_idx) == remove_set.end()){
             // valid sequence
             if (lowest_span == -1 || curr_span < lowest_span) lowest_span = curr_span;
         }

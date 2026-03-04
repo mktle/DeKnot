@@ -33,7 +33,7 @@ class Graph {
         void set_k_prime(int set_val);
         int num_nodes();
         int num_unitigs();
-        bool check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min_span, SketchedSeq*& corrected_seq);
+        bool check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, int& min_span, SketchedSeq*& corrected_seq, SketchedSeq*& split_seq);
         void correct_read_error_within_unitig(DroppedBlock& to_correct, SketchedSeq*& corrected_seq);
         void correct_read_error_across_unitigs(DroppedBlock& dropped_block, SketchedSeq*& corrected_seq);
         bool add_sequence(SketchedSeq& input_seq, Graph* prev_graph);
@@ -87,9 +87,6 @@ class Graph {
         std::vector<int> unitig_free_list;
 
         ankerl::unordered_dense::map<KmerView, Node*, utils::KmerViewHash, utils::KmerViewEqual> node_table;
-        // inspect and trim branches that have these kmers at the branch site
-        // e.g., dinucleotide repeats
-        ankerl::unordered_dense::set<uint64_t> drop_sites;
 };
 
 #endif

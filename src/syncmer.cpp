@@ -24,6 +24,26 @@ void syncmer::sketch_sequences(int s, std::vector<std::string>& reads, std::vect
     }
 }
 
+SketchedSeq* syncmer::split_sequence(SketchedSeq* init_seq, size_t idx_first, size_t idx_second){
+    assert(idx_first > 0);
+    assert(idx_second < init_seq->kmers.size() - 2);
+    SketchedSeq* new_seq = new SketchedSeq(init_seq->name + "-2", init_seq->is_read);
+    init_seq->name = init_seq->name + "-1";
+    new_seq->assignment = init_seq->assignment;
+    new_seq->num_tried = init_seq->num_tried;
+
+    // move latter part into new sequence object
+    new_seq->kmers.assign(init_seq->kmers.begin() + (long)idx_second, init_seq->kmers.end());
+    new_seq->flipped.assign(init_seq->flipped.begin() + (long)idx_second, init_seq->flipped.end());
+    new_seq->unique_seq_len.assign(init_seq->unique_seq_len.begin() + (long)idx_second, init_seq->unique_seq_len.end());
+
+    // shrink original to only keep first part
+    init_seq->kmers.resize(idx_first + 1);
+    init_seq->flipped.resize(idx_first + 1);
+    init_seq->unique_seq_len.resize(idx_first + 1);
+    return new_seq;
+}
+
 void syncmer::get_all_syncmers(std::string& sequence, int s, std::vector<uint64_t>& kmer_list, std::vector<uint8_t>& flipped_list, std::vector<int>& unique_seq_len, std::vector<int>& indices){
     uint64_t curr_hash {0};
     uint64_t rc_hash {0};
