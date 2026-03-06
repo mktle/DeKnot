@@ -78,7 +78,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             io::write_sequences(input_seqs, out_reads);
         }
         int times {0};
-        bool check_dinuc {k_prime - init_k_prime > 200};
+        bool check_dinuc {k_prime - init_k_prime > 100};
         bool graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);
         while(graph_changed && times < 10){
             curr_graph->trim_tips();

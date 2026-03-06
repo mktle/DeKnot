@@ -636,6 +636,40 @@ void Graph::create_unitig_for_node(Node* node){
     node->assign_unitig(new_utg);
 }
 
+bool Graph::check_cross_pattern(Unitig* to_check){
+    if (to_check->get_front() == to_check->get_back()) return false;
+
+    if (!(to_check->get_front()->num_neighbors() == 2 && to_check->get_back()->num_neighbors() == 2)) return false;
+
+    // check for having only two unitig-level neighbors
+    Node* im_front {to_check->get_front()->get_diff_unitig_neighbor()};
+    Node* im_back {to_check->get_back()->get_diff_unitig_neighbor()};
+    if (!(im_front->num_neighbors() == 3 && im_back->num_neighbors() == 3)) return false;
+
+    // check that the next unitig extended from each immediate neighbor is the only neighbor
+    Node* op_im_front {im_front->get_unitig()->opposite_end(im_front)};
+    Node* op_im_back {im_back->get_unitig()->opposite_end(im_back)};
+    if (!(op_im_front->num_neighbors() == 2 && op_im_back->num_neighbors() == 2)) return false;
+
+    Node* pinch_front {op_im_front->get_diff_unitig_neighbor()};
+    Node* pinch_back {op_im_back->get_diff_unitig_neighbor()};
+    if (!(pinch_front->num_neighbors() == 3 && pinch_back->num_neighbors() == 3)) return false;
+
+    // now find the unitig that is parallel to the unitig being checked with respect to very first neighbor
+    Node* front_parallel {im_front->get_parallel_neigh(to_check)};
+    Node* back_parallel {im_back->get_parallel_neigh(to_check)};
+
+    // now find the unitig that is parallel to the endpoints
+    Node* pinch_front_parallel {pinch_front->get_parallel_neigh(im_front->get_unitig())};
+    Node* pinch_back_parallel {pinch_back->get_parallel_neigh(im_back->get_unitig())};
+
+    // now check for cross pattern
+    if (!(pinch_front_parallel->get_unitig() == back_parallel->get_unitig())) return false;
+    if (!(pinch_back_parallel->get_unitig() == front_parallel->get_unitig())) return false;
+
+    return true;
+}
+
 void Graph::trim_tips(){
     bool changed = true;
     while(changed){
@@ -710,7 +744,15 @@ bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc){
             }else{
                 compacted_back = this->trim_low_freq_end(curr_utg->get_back(), current_thresh, sorted_unitigs, check_dinuc);
             }
-
+            bool dropped_cross {false};
+            if (check_dinuc && !(compacted_front || compacted_back)){
+                if(check_cross_pattern(curr_utg)){
+                    Node* adj_node {curr_utg->get_front()->get_diff_unitig_neighbor()};
+                    this->drop_unitig(sorted_unitigs, adj_node, curr_utg);
+                    graph_changed = true;
+                    break;
+                }
+            }
             if (compacted_front || compacted_back){
                 // if either of the ends extended the unitig after dropping unitigs, then start the compaction process over
                 current_thresh = 2;

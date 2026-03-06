@@ -155,6 +155,28 @@ bool Node::neighbors_diff_utg(){
     return false;
 }
 
+Node* Node::get_diff_unitig_neighbor(){
+    assert(this->neighbors.size() == 2);
+    for (size_t i{0}; i < this->neighbors.size(); i++){
+        if (this->neighbors[i].neighbor->get_unitig() != this->get_unitig()){
+            return this->neighbors[i].neighbor;
+        }
+    }
+    assert(0);
+    return NULL;
+}
+
+Node* Node::get_parallel_neigh(Unitig* in_utg){
+    assert(this->neighbors.size() == 3);
+    for (size_t i{0}; i < this->neighbors.size(); i++){
+        if (this->neighbors[i].neighbor->get_unitig() != this->get_unitig() && this->neighbors[i].neighbor->get_unitig() != in_utg){
+            return this->neighbors[i].neighbor;
+        }
+    }
+    assert(0);
+    return NULL;
+}
+
 int Node::longest_neighbor_utg_length(){
     int longest_length {0};
     for (size_t i{0}; i < neighbors.size(); i++){

@@ -44,6 +44,8 @@ class Node{
         uint64_t get_front_hash();
         uint64_t get_back_hash();
         bool neighbors_diff_utg();
+        Node* get_diff_unitig_neighbor();
+        Node* get_parallel_neigh(Unitig* in_utg);
         int longest_neighbor_utg_length();
         const std::vector<Edge>& view_neighbors();
         bool is_tip();
