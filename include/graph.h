@@ -53,7 +53,7 @@ class Graph {
         int next_node_id();
         int next_unitig_id();
 
-        void increment_k_min_mer_count(int increment, KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx);
+        void increment_k_min_mer_count(int increment, bool is_read, KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx);
         void increment_unitig(int increment, Unitig* to_increment);
         int k_plus_one_mer_count(Span<uint64_t>& k_syncmer);
         void destroy_unitig(Unitig* to_remove);

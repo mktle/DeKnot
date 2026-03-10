@@ -321,14 +321,14 @@ bool Graph::add_sequence(SketchedSeq& input_seq, Graph* prev_graph){
             if (!input_seq.is_read){
                 increment_val = prev_graph->k_plus_one_mer_count(first_kmers);
             }
-            this->increment_k_min_mer_count(increment_val, first_ksyncmer, first_flipped, first_unique_seq_len);
+            this->increment_k_min_mer_count(increment_val, input_seq.is_read, first_ksyncmer, first_flipped, first_unique_seq_len);
             first_connection = false;
         }
         int increment_val {1};
         if (!input_seq.is_read){
             increment_val = prev_graph->k_plus_one_mer_count(second_kmers);
         }
-        this->increment_k_min_mer_count(increment_val, second_ksyncmer, second_flipped, second_unique_seq_len);
+        this->increment_k_min_mer_count(increment_val, input_seq.is_read, second_ksyncmer, second_flipped, second_unique_seq_len);
 
         // add connection between these adjacent k-min-mers
         this->add_connection(first_ksyncmer, first_orient, second_ksyncmer, second_orient);
@@ -544,7 +544,7 @@ int Graph::next_unitig_id(){
 
 // k_min_mer should be reversed already for lookup
 // but the bookkeping structures won't be (to reduce number of copies)
-void Graph::increment_k_min_mer_count(int increment, KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx){
+void Graph::increment_k_min_mer_count(int increment, bool is_read, KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx){
     Node* node_ptr = get_node_from_lookup_table(k_syncmer);
     if (node_ptr == NULL){
         // have not encountered this k_min_mer before, so need to create a new node and unitig
@@ -555,8 +555,14 @@ void Graph::increment_k_min_mer_count(int increment, KmerView& k_syncmer, Span<u
         this->add_node_to_lookup_table(new_node);
         new_node->set_count(increment);
     }else{
-        // have already encountered this k_min_mer, so we just need to increment count
-        node_ptr->set_count(node_ptr->get_count() + increment);
+        if (is_read){
+            // have already encountered this k_min_mer, so we just need to increment count
+            node_ptr->set_count(node_ptr->get_count() + increment);
+        }else{
+            // unitig counts already include reads from prev iteration;
+            // use max to avoid double-counting
+            node_ptr->set_count(std::max(node_ptr->get_count(), increment));
+        }
     }
 }
 
