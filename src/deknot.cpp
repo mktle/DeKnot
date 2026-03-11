@@ -10,7 +10,8 @@
 #include <fstream>
 #include <string>
 
-const int DEBUG_CHECKPOINTS[] = {3, 50, 100, 150, 200, 250, 289, 300, 350, 400, 450, 500, 550};
+const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 150, 200, 250, 289, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500};
+int DEBUG_IDX = 0;
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 
@@ -18,7 +19,7 @@ void dk_opt_init(dk_opt_t* opt){
     memset(opt, 0, sizeof(dk_opt_t));
     opt->s = 9;
     opt->init_k_prime = 2;
-    opt->max_iterations = 700;
+    opt->max_iterations = 1600;
     opt->compact_thresh = 4;
     opt->return_hpc_utg = 0;
     opt->out_dir = NULL;
@@ -69,7 +70,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             std::cout << curr_graph->num_nodes() << " initial nodes" << std::endl;
             std::cout << curr_graph->num_unitigs() << " initial unitigs" << std::endl;
         }
-        if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || (k_prime - init_k_prime) % 100 == 0 || std::find(std::begin(DEBUG_CHECKPOINTS), std::end(DEBUG_CHECKPOINTS), k_prime) != std::end(DEBUG_CHECKPOINTS))){
+        if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || std::find(std::begin(DEBUG_CHECKPOINTS), std::end(DEBUG_CHECKPOINTS), k_prime) != std::end(DEBUG_CHECKPOINTS))){
             std::string out_unitigs {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + ".gfa"};
             std::string out_nodes {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + "_nodes.gfa"};
             curr_graph->write_hpc_unitigs_to_gfa(out_unitigs, true);
@@ -86,7 +87,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             times++;
         }
         curr_graph->remove_floaters(opt->compact_thresh);
-        if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || (k_prime - init_k_prime) % 100 == 0 || std::find(std::begin(DEBUG_CHECKPOINTS), std::end(DEBUG_CHECKPOINTS), k_prime) != std::end(DEBUG_CHECKPOINTS))){
+        if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || (k_prime - init_k_prime) % 100 == 0 || check_for_checkpoint(k_prime))){
             std::string out_unitigs_compacted {std::string(opt->out_dir) + "/compacted_k" + std::to_string(k_prime) + ".gfa"};
             std::string out_hpc {std::string(opt->out_dir) + "/compacted_" + std::to_string(k_prime) + ".hpc.gfa"};
             curr_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
@@ -350,4 +351,16 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
     }
     input_sequences = std::move(kept);
     return true;
+}
+
+bool check_for_checkpoint(int curr_k_prime){
+    int new_idx = DEBUG_IDX;
+    while(curr_k_prime >= DEBUG_CHECKPOINTS[new_idx]){
+        new_idx++;
+    }
+    if (new_idx != DEBUG_IDX){
+        DEBUG_IDX = new_idx;
+        return true;
+    }
+    return false;
 }

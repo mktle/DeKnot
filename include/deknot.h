@@ -105,6 +105,11 @@ void dk_write_gfa(const char* file_path, dk_graph_t* graph);
  */
 void dk_graph_free(dk_graph_t* to_free);
 
+/*
+ * Helper function for debugging/checkpointing
+ */
+bool check_for_checkpoint(int curr_k_prime);
+
 #ifdef __cplusplus
 }
 #endif
