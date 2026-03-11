@@ -10,7 +10,7 @@
 #include <fstream>
 #include <string>
 
-const int DEBUG_CHECKPOINTS[] = {3, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550};
+const int DEBUG_CHECKPOINTS[] = {3, 50, 100, 150, 200, 250, 289, 300, 350, 400, 450, 500, 550};
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 

@@ -650,6 +650,7 @@ bool Graph::check_cross_pattern(Unitig* to_check){
     // check for having only two unitig-level neighbors
     Node* im_front {to_check->get_front()->get_diff_unitig_neighbor()};
     Node* im_back {to_check->get_back()->get_diff_unitig_neighbor()};
+    if (im_front == NULL || im_back == NULL) return false;
     if (!(im_front->num_neighbors() == 3 && im_back->num_neighbors() == 3)) return false;
 
     // check that the next unitig extended from each immediate neighbor is the only neighbor
@@ -659,15 +660,18 @@ bool Graph::check_cross_pattern(Unitig* to_check){
 
     Node* pinch_front {op_im_front->get_diff_unitig_neighbor()};
     Node* pinch_back {op_im_back->get_diff_unitig_neighbor()};
+    if (pinch_front == NULL || pinch_back == NULL) return false;
     if (!(pinch_front->num_neighbors() == 3 && pinch_back->num_neighbors() == 3)) return false;
 
     // now find the unitig that is parallel to the unitig being checked with respect to very first neighbor
     Node* front_parallel {im_front->get_parallel_neigh(to_check)};
     Node* back_parallel {im_back->get_parallel_neigh(to_check)};
+    if (front_parallel == NULL || back_parallel == NULL) return false;
 
     // now find the unitig that is parallel to the endpoints
     Node* pinch_front_parallel {pinch_front->get_parallel_neigh(im_front->get_unitig())};
     Node* pinch_back_parallel {pinch_back->get_parallel_neigh(im_back->get_unitig())};
+    if (pinch_front_parallel == NULL || pinch_back_parallel == NULL) return false;
 
     // now check for cross pattern
     if (!(pinch_front_parallel->get_unitig() == back_parallel->get_unitig())) return false;
@@ -799,7 +803,7 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
         std::cout << "Dropping based on dinucleotide criteria (utg " << lower_utg->get_id() << " dropped during check on utg" << curr_utg->get_id() << ")" << std::endl;
         assert(lower_utg != NULL);
         bool compacted_graph = this->drop_unitig(sorted_list, node_end, lower_utg);
-        return compacted_graph;
+        return true;
     }
     return false;
 }
@@ -867,12 +871,14 @@ bool Graph::drop_unitig(std::vector<Unitig*>& sorted_list, Node* curr_node, Unit
         *it = NULL;
     }
     // first handle special case where the dropped unitig is connected to curr unitig on both ends
+    /*
     if (neigh_utg->num_nodes() > 1 && curr_node->is_neighbors_with(neigh_utg->get_front()) && curr_node->is_neighbors_with(neigh_utg->get_back())){
         curr_node->remove_neighbor(neigh_utg->get_front());
         curr_node->remove_neighbor(neigh_utg->get_back());
         this->destroy_unitig(neigh_utg);
         return false;
     }
+    */
 
     bool compacted_front = this->disconnect_unitig_end(neigh_utg->get_front(), curr_utg, sorted_list);
     bool compacted_back;
