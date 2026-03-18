@@ -15,7 +15,8 @@ Unitig::Unitig(std::vector<Node*>& set_nodes, int index){
     this->checked_bubble = false;
     this->in_bubble = false;
     this->parallel_utg = NULL;
-    this->assignment = UNASSIGNED;
+    //this->hap1_count = 0;
+    //this->hap2_count = 0;
 }
 
 bool Unitig::neighbors_unitig(){

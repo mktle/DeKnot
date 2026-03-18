@@ -243,7 +243,7 @@ bool Node::end_is_dinucleotide(){
     
     uint64_t hash = this->ksyncmer.kmers[(size_t)side];
     // get either 6 least significant characters, or 6 most significant characters
-    uint64_t subhash = read_dir == FORWARD_ORIENTATION ? hash >> 50 : hash & ((1ULL << 12) - 1);
+    uint64_t subhash = read_dir == FORWARD_ORIENTATION ? hash >> 52 : (hash >> 2) & 0xFFF;
     if (DINUCLEOTIDE_SUBHASHES.contains(subhash)){
         return true;
     }
