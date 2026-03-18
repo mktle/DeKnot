@@ -30,46 +30,26 @@ void phase::initialize_unitigs_for_tagging(Graph* graph, std::vector<SketchedSeq
     }
 
     //TODO: can use the reads and their partition to update this classification
-    //TODO: look at each partition separately rather than resolving it jointly
-    /*********************************************************
-     * Tag unitigs as being part of bubbles or heterozygous  *
-     *********************************************************/
-    const std::vector<Unitig*> unitig_list = graph->view_unitigs();
-    for (size_t i{0}; i < unitig_list.size(); i++){
-        Unitig* utg = unitig_list[i];
-        if (utg != NULL){
-            utg->update_median_freq();
-            sorted_unitigs.push_back(utg);
-            // set bubble information; should not change now that the graph is fixed
-            if (!utg->get_checked_bubble()){
-                assert(utg->get_front() != utg->get_back());
-                utg->determine_parallel();
-                if (utg->get_in_bubble()){
-                    utg->set_assignment(UNASSIGNED);
-                }else{
-                    utg->set_assignment(HOM);
-                }
-            }
-        }
-    }
     std::sort(sorted_unitigs.begin(), sorted_unitigs.end(), compare_unitigs);
 }
 
-void phase::choose_initial_bubble(std::vector<Unitig*>& sorted_unitigs){
+void phase::seed_initial_haplotypes(std::vector<Unitig*>& sorted_unitigs){
     /***************************************
      * Choose bubble to start phasing from *
      ***************************************/
     Unitig* initial_utg = sorted_unitigs[0];
-    size_t i{1};
-    while(!initial_utg->get_in_bubble()){
+    Unitig* parallel_utg = NULL;
+    size_t i{0};
+    while(parallel_utg == NULL){
         assert(i < sorted_unitigs.size());
         initial_utg = sorted_unitigs[i];
+        parallel_utg = initial_utg->get_parallel_utg();
         i++;
     }
     initial_utg->set_assignment(HAP1);
     initial_utg->assign_reads();
-    initial_utg->get_parallel_utg()->set_assignment(HAP2);
-    initial_utg->get_parallel_utg()->assign_reads();
+    parallel_utg->set_assignment(HAP2);
+    parallel_utg->assign_reads();
 }
 
 // return true if any assignments changed
@@ -79,38 +59,13 @@ bool phase::reassign_partitions(Graph* graph, std::vector<SketchedSeq*>& reads){
      * Reassign unitig labels *
      **************************/
     const std::vector<Unitig*> unitig_list = graph->view_unitigs();
-    // first reset iteration-specific trackers
     for (size_t i{0}; i < unitig_list.size(); i++){
         Unitig* utg = unitig_list[i];
         if (utg != NULL){
-            utg->set_hap_flipped(false);
-        }
-    }
-
-    for (size_t i{0}; i < unitig_list.size(); i++){
-        Unitig* utg = unitig_list[i];
-        if (utg != NULL && utg->get_in_bubble()){
             bool flipped = utg->reassign_haplotype();
             if (flipped) changed = true;
-            if (flipped) std::cout << "flipped utg " << utg->get_id() << std::endl;//mkl
         }
     }
-
-    bool any_flipped = false;
-    // check if any flipped haplotypes were later negated
-    if (changed){
-        for (size_t i{0}; i < unitig_list.size() ; i++){
-            Unitig* utg = unitig_list[i];
-            if (utg != NULL && utg->get_hap_flipped()){
-                std::cout << "have a flipped on utg" << utg->get_id() << std::endl;//mkl
-                any_flipped = true;
-                break;
-            }
-        }
-    }
-    changed = any_flipped;
-    if (!changed) return false;
-    std::cout << "final changed: " << changed << std::endl;//mkl
 
     /************************
      * Reassign read labels *
@@ -135,11 +90,9 @@ bool phase::reassign_partitions(Graph* graph, std::vector<SketchedSeq*>& reads){
             if (num1 > num2 && (reads[i]->assignment == HAP2 || reads[i]->assignment == UNASSIGNED)){
                 reads[i]->assignment = HAP1;
                 changed =  true;
-                std::cout << "changed to HAP1" << reads[i]->name << std::endl;//mkl
             }else if (num2 > num1 && (reads[i]->assignment == HAP1 || reads[i]->assignment == UNASSIGNED)){
                 reads[i]->assignment = HAP2;
                 changed = true;
-                std::cout << "changed to HAP2" << reads[i]->name << std::endl;//mkl
             }
         }
     }

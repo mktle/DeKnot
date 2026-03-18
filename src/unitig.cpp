@@ -11,12 +11,8 @@ Unitig::Unitig(std::vector<Node*>& set_nodes, int index){
     this->index = index;
     this->base_freq = 0;
     this->update_median_freq();
-    // initialize to false to be updated during phasing
-    this->checked_bubble = false;
-    this->in_bubble = false;
-    this->parallel_utg = NULL;
-    //this->hap1_count = 0;
-    //this->hap2_count = 0;
+    this->hap1_count = 0;
+    this->hap2_count = 0;
 }
 
 bool Unitig::neighbors_unitig(){
@@ -219,75 +215,21 @@ bool Unitig::is_neighbors_with(Unitig* check_utg){
 }
 
 int Unitig::get_assignment(){
-    return this->assignment;
+        return this->assignment;
 }
 
 void Unitig::set_assignment(int id){
-    this->assignment = id;
+        this->assignment = id;
+}
+
+int Unitig::get_hap_count(int id){
+    assert(id == HAP1 || id == HAP2);
+    if (id == HAP1) return this->hap1_count;
+    return this->hap2_count;
 }
 
 Unitig* Unitig::get_parallel_utg(){
-    assert(this->in_bubble);
-    return this->parallel_utg;
-}
-
-void Unitig::set_parallel_utg(Unitig* utg){
-    assert(this->in_bubble);
-    this->parallel_utg = utg;
-}
-
-bool Unitig::get_checked_bubble(){
-    return this->checked_bubble;
-}
-
-void Unitig::set_bubble_check(bool set_check){
-    this->checked_bubble = set_check;
-}
-
-bool Unitig::get_in_bubble(){
-    return this->in_bubble;
-}
-
-void Unitig::set_in_bubble(bool set_bubble){
-    this->in_bubble = set_bubble;
-}
-
-void Unitig::determine_parallel(){
-    assert(!this->get_checked_bubble());
-    assert(this->get_front() != this->get_back());
     std::vector<Unitig*> parallel_utgs;
-    /************************************************************************
-     * Handle actual bubble case, and the case where two unitigs are on end *
-     ************************************************************************/
-     if (this->get_front()->num_neighbors() == 1 && this->get_back()->num_neighbors() == 1){
-        ;
-     }else if (this->get_front()->num_neighbors() == 1 || this->get_back()->num_neighbors() == 1){
-        this->determine_split_end(parallel_utgs);
-    }else{
-        this->determine_bubble(parallel_utgs);
-    }
-
-    if (parallel_utgs.size() == 0){
-        this->in_bubble = false;
-    }else{
-        this->in_bubble = true;
-        // if there are multiple options for second haplotype, keep the one with higher frequency and discard others
-        this->parallel_utg = parallel_utgs[0];
-        for (size_t i{1}; i < parallel_utgs.size(); i++){
-            if (parallel_utgs[i]->get_median_freq() > this->parallel_utg->get_median_freq()){
-            this->parallel_utg = parallel_utgs[i];
-            }
-        }
-        for (size_t i{0}; i < parallel_utgs.size(); i++){
-            if(parallel_utgs[i] != this->parallel_utg){
-                parallel_utgs[i]->set_assignment(DISCARDED);
-            }
-        }
-    }
-    this->set_bubble_check(true);
-}
-
-void Unitig::determine_bubble(std::vector<Unitig*>& parallel_utgs){
     const std::vector<Edge> front_neighs = this->get_front()->view_neighbors();
     const std::vector<Edge> back_neighs = this->get_back()->view_neighbors();
     for (size_t i{0}; i < front_neighs.size(); i++){
@@ -317,33 +259,11 @@ void Unitig::determine_bubble(std::vector<Unitig*>& parallel_utgs){
             }
         }
     }
-}
-
-void Unitig::determine_split_end(std::vector<Unitig*>& parallel_utgs){
-    Node* attached_end = this->get_front()->num_neighbors() > 1 ? this->get_front() : this->get_back();
-    const std::vector<Edge> neighs = attached_end->view_neighbors();
-    for (size_t i{0}; i < neighs.size(); i++){
-        Node* neigh = neighs[i].neighbor;
-        // get the direction of connection to unitig's front
-        const std::vector<Edge> nns = neigh->view_neighbors();
-        char check_dir = INVALID_ORIENTATION;
-        for (size_t j{0}; j < nns.size(); j++){
-            if (nns[j].neighbor == attached_end){
-                check_dir = nns[j].self_orientation;
-                break;
-            }
-        }
-        assert(check_dir != INVALID_ORIENTATION);
-        for (size_t j{0}; j < nns.size(); j++){
-            Node* parallel_node = nns[j].neighbor;
-            if (parallel_node != attached_end && nns[j].self_orientation == check_dir){
-                Unitig* parallel_utg = parallel_node->get_unitig();
-                if (parallel_utg->opposite_end(parallel_node)->num_neighbors() == 1){
-                    parallel_utgs.push_back(parallel_utg);
-                }
-            }
-        }
+    // only return if it is a simple bubble (i.e., exactly one parallel unitig)
+    if (parallel_utgs.size() == 1){
+        return parallel_utgs[0];
     }
+    return NULL;
 }
 
 void Unitig::add_read(SketchedSeq* read){
@@ -355,67 +275,29 @@ void Unitig::assign_reads(){
         this->aligned_seqs[i]->assignment = this->get_assignment();
     }
 }
-
-void Unitig::set_hap_flipped(bool set){
-    this->hap_flipped = set;
-}
-
-bool Unitig::get_hap_flipped(){
-    return this->hap_flipped;
-}
-
-float Unitig::get_frac_hap1(){
-    return this->frac_hap1;
-}
-
 void Unitig::tally_reads(){
-    float num1 {0};
-    float num2 {0};
+    this->hap1_count = 0;
+    this->hap2_count = 0;
     for (size_t i{0}; i < this->aligned_seqs.size(); i++){
-        if (this->aligned_seqs[i]->assignment == HAP1) num1++;
-        if (this->aligned_seqs[i]->assignment == HAP2) num2++;
+        if (this->aligned_seqs[i]->assignment == HAP1) this->hap1_count++;
+        if (this->aligned_seqs[i]->assignment == HAP2) this->hap2_count++;
     }
-    this->frac_hap1 = num1 / (num1 + num2);
 }
 
 bool Unitig::reassign_haplotype(){
-    assert(this->get_assignment() != HOM && this->get_assignment() != DISCARDED);
-    this->tally_reads();
-
-    if (this->get_frac_hap1() > 0.5 && (this->get_assignment() == HAP2 || this->get_assignment() == UNASSIGNED)){
-        std::cout << "returning true (1) with " << this->get_frac_hap1() << " and assignment " << this->get_assignment() << std::endl;//mkl
-        // handle the case where reads for both unitigs vote for the same haplotype (and are just flipping back and forth)
-        if(this->parallel_utg->get_hap_flipped()){
-            this->parallel_utg->set_hap_flipped(false);
-            if (this->get_frac_hap1() > this->parallel_utg->get_frac_hap1()){
-                this->set_assignment(HAP1);
-                this->parallel_utg->set_assignment(HAP2);
-            }
-            std::cout << "but returning false" << std::endl;//mkl
-            return false;
-        }
-        this->set_hap_flipped(true);
+    int c1 = this->get_hap_count(HAP1);
+    int c2 = this->get_hap_count(HAP2);
+    int old_assign = this->get_assignment();
+    if (c1 > 0 && c2 > 0){
+        this->set_assignment(HOM);
+    }else if (c1 > 0){
         this->set_assignment(HAP1);
-        this->parallel_utg->set_assignment(HAP2);
-        return true;
-    }else if (this->get_frac_hap1() < 0.5 && (this->get_assignment() == HAP1 || this->get_assignment() == UNASSIGNED)){
-        std::cout << "returning true (2) with " << this->get_frac_hap1() << " and assignment " << this->get_assignment() << std::endl;//mkl
-        // handle the case where reads for both unitigs vote for the same haplotype (and are just flipping back and forth)
-        if(this->parallel_utg->get_hap_flipped()){
-            this->parallel_utg->set_hap_flipped(false);
-            if (this->get_frac_hap1() < this->parallel_utg->get_frac_hap1()){
-                this->set_assignment(HAP2);
-                this->parallel_utg->set_assignment(HAP1);
-            }
-            std::cout << "but returning false" << std::endl;//mkl
-            return false;
-        }
-        this->set_hap_flipped(true);
+    }else if (c2 > 0){
         this->set_assignment(HAP2);
-        this->parallel_utg->set_assignment(HAP1);
-        return true;
+    }else{
+        this->set_assignment(UNASSIGNED);
     }
-    return false;
+    return old_assign != this->get_assignment();
 }
 
 void Unitig::list_nodes(){
@@ -498,7 +380,7 @@ void Unitig::get_hpc_sequence(std::string& ret_seq, bool reverse, bool append){
             int i = (int)this->nodes.size() - 2;
             for (; i >= 0; i--){
                 curr_node = this->nodes[(size_t)i];
-                 // add the kmer that extends past the current node
+                // add the kmer that extends past the current node
                 if (next_direction == FORWARD_ORIENTATION){
                     hash::add_to_seq_from_hash(curr_node->get_back_hash(), curr_node->ith_kmer_flipped(k_prime - 1), curr_node->ith_unique_seq_len(k_prime - 2), ret_seq);
                 }else{
@@ -588,7 +470,6 @@ void Unitig::print_kmers(){
 void Unitig::print(bool verbose){
     this->update_median_freq();
     std::cout << "[" << this->get_id() << "][" << this->get_assignment() << "]";
-    if (this->in_bubble) std::cout << "[opp utg" << this->parallel_utg->get_id() << "]";
     std::cout << " n" << this->get_front()->get_node_id() << "\tn" << this->get_back()->get_node_id() << "\tmedian freq " << this->get_median_freq() << '\n';
     if (verbose){
         this->list_nodes();

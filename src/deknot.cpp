@@ -10,7 +10,7 @@
 #include <fstream>
 #include <string>
 
-const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 101, 102, 103, 104, 105, 110, 120, 130, 140, 150};
+const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150};
 int DEBUG_IDX = 0;
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
@@ -19,7 +19,7 @@ void dk_opt_init(dk_opt_t* opt){
     memset(opt, 0, sizeof(dk_opt_t));
     opt->s = 9;
     opt->init_k_prime = 2;
-    opt->max_iterations = 1600;
+    opt->max_iterations = 1100;
     opt->compact_thresh = 4;
     opt->return_hpc_utg = 0;
     opt->out_dir = NULL;
@@ -121,7 +121,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
     phase::initialize_unitigs_for_tagging(prev_graph, input_seqs, utg_list);
     
     while(utg_list.size() > 0){
-        phase::choose_initial_bubble(utg_list);
+        phase::seed_initial_haplotypes(utg_list);
         int i{0};
         while(phase::reassign_partitions(prev_graph, input_seqs)){
             i++;
