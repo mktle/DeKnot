@@ -13,6 +13,11 @@ Unitig::Unitig(std::vector<Node*>& set_nodes, int index){
     this->update_median_freq();
     this->hap1_count = 0;
     this->hap2_count = 0;
+    this->assignment = UNASSIGNED;
+    this->locked = false;
+    this->times_walked = 0;
+    this->walk_limit = 1;
+    this->parallel_utg = NULL;
 }
 
 bool Unitig::neighbors_unitig(){
@@ -140,7 +145,7 @@ void Unitig::update_median_freq(){
     if (counts.size() % 2 == 0){
         this->median_freq = (float)(counts[counts.size() / 2] + counts[counts.size() / 2 - 1]) / (float)2.0;
     }else{
-        this->median_freq = (float)counts[counts.size() / (float)2.0];
+        this->median_freq = (float)counts[counts.size() / 2];
     }
 }
 
@@ -215,11 +220,20 @@ bool Unitig::is_neighbors_with(Unitig* check_utg){
 }
 
 int Unitig::get_assignment(){
-        return this->assignment;
+    return this->assignment;
 }
 
 void Unitig::set_assignment(int id){
-        this->assignment = id;
+    this->assignment = id;
+}
+
+void Unitig::set_hap_count(int id, int count){
+    assert(id == HAP1 || id == HAP2);
+    if (id == HAP1){
+        this->hap1_count = count;
+    }else{
+        this->hap2_count = count;
+    }
 }
 
 int Unitig::get_hap_count(int id){
@@ -228,7 +242,21 @@ int Unitig::get_hap_count(int id){
     return this->hap2_count;
 }
 
-Unitig* Unitig::get_parallel_utg(){
+float Unitig::get_hap_frac(int id){
+    assert(id == HAP1 || id == HAP2);
+    if (id == HAP1) return ((float)this->hap1_count / (float)(this->hap1_count + this->hap2_count));
+    return ((float)this->hap2_count / (float)(this->hap1_count + this->hap2_count));
+}
+
+void Unitig::set_hap_flipped(bool set){
+        this->hap_flipped = set;
+}
+
+bool Unitig::get_hap_flipped(){
+        return this->hap_flipped;
+}
+
+void Unitig::set_parallel_utg(){
     std::vector<Unitig*> parallel_utgs;
     const std::vector<Edge> front_neighs = this->get_front()->view_neighbors();
     const std::vector<Edge> back_neighs = this->get_back()->view_neighbors();
@@ -259,45 +287,69 @@ Unitig* Unitig::get_parallel_utg(){
             }
         }
     }
-    // only return if it is a simple bubble (i.e., exactly one parallel unitig)
+    // only allow if it is a simple bubble (i.e., exactly one parallel unitig)
     if (parallel_utgs.size() == 1){
-        return parallel_utgs[0];
+        this->parallel_utg = parallel_utgs[0];
+    }else{
+        this->parallel_utg = NULL;
     }
-    return NULL;
+}
+
+Unitig* Unitig::get_parallel_utg(){
+    return this->parallel_utg;
 }
 
 void Unitig::add_read(SketchedSeq* read){
     aligned_seqs.push_back(read);
 }
 
-void Unitig::assign_reads(){
+void Unitig::assign_reads(bool lock){
     for (size_t i{0}; i < this->aligned_seqs.size(); i++){
-        this->aligned_seqs[i]->assignment = this->get_assignment();
-    }
-}
-void Unitig::tally_reads(){
-    this->hap1_count = 0;
-    this->hap2_count = 0;
-    for (size_t i{0}; i < this->aligned_seqs.size(); i++){
-        if (this->aligned_seqs[i]->assignment == HAP1) this->hap1_count++;
-        if (this->aligned_seqs[i]->assignment == HAP2) this->hap2_count++;
+        if (!this->aligned_seqs[i]->locked){
+            this->aligned_seqs[i]->assignment = this->get_assignment();
+            if (lock) this->aligned_seqs[i]->locked = true;
+        }
     }
 }
 
-bool Unitig::reassign_haplotype(){
-    int c1 = this->get_hap_count(HAP1);
-    int c2 = this->get_hap_count(HAP2);
-    int old_assign = this->get_assignment();
-    if (c1 > 0 && c2 > 0){
-        this->set_assignment(HOM);
-    }else if (c1 > 0){
-        this->set_assignment(HAP1);
-    }else if (c2 > 0){
-        this->set_assignment(HAP2);
-    }else{
-        this->set_assignment(UNASSIGNED);
+void Unitig::tally_reads(){
+    int hap1_count {0};
+    int hap2_count {0};
+    for (size_t i{0}; i < this->aligned_seqs.size(); i++){
+        SketchedSeq* curr_seq = this->aligned_seqs[i];
+        if (curr_seq->assignment == HAP1) hap1_count++;
+        if (curr_seq->assignment == HAP2) hap2_count++;
     }
-    return old_assign != this->get_assignment();
+    this->set_hap_count(HAP1, hap1_count);
+    this->set_hap_count(HAP2, hap2_count);
+}
+
+void Unitig::lock_haplotype(){
+    this->locked = true;
+}
+
+bool Unitig::is_locked(){
+    return this->locked;
+}
+
+void Unitig::set_times_walked(int val){
+    this->times_walked = val;
+}
+
+int Unitig::get_times_walked(){
+    return this->times_walked;
+}
+
+void Unitig::set_walk_limit(int val){
+    this->walk_limit = val;
+}
+
+int Unitig::get_walk_limit(){
+    return this->walk_limit;
+}
+
+const std::vector<SketchedSeq*>& Unitig::view_aligned_seqs(){
+    return this->aligned_seqs;
 }
 
 void Unitig::list_nodes(){
@@ -470,7 +522,10 @@ void Unitig::print_kmers(){
 void Unitig::print(bool verbose){
     this->update_median_freq();
     std::cout << "[" << this->get_id() << "][" << this->get_assignment() << "]";
-    std::cout << " n" << this->get_front()->get_node_id() << "\tn" << this->get_back()->get_node_id() << "\tmedian freq " << this->get_median_freq() << '\n';
+    std::cout << " n" << this->get_front()->get_node_id() << "\tn" << this->get_back()->get_node_id() << "\tmedian freq " << this->get_median_freq() << "\t\t\thap counts\t" << this->get_hap_count(HAP1) << "\t" << this->get_hap_count(HAP2) << "\t\twalk limit\t" << this->get_walk_limit() << "\n";
+    for (size_t i{0}; i < this->aligned_seqs.size(); i++){//mkl
+        std::cout << this->aligned_seqs[i]->name << " " << this->aligned_seqs[i]->assignment << std::endl;//mkl
+    }//mkl
     if (verbose){
         this->list_nodes();
     }

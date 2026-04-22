@@ -13,10 +13,11 @@ const int HAP2 = 2;
 
 namespace phase{
     void initialize_unitigs_for_tagging(Graph* graph, std::vector<SketchedSeq*>& reads, std::vector<Unitig*>& sorted_unitigs);
-    void seed_initial_haplotypes(std::vector<Unitig*>& sorted_unitigs);
+    bool seed_initial_haplotypes(std::vector<Unitig*>& sorted_unitigs);
     bool reassign_partitions(Graph* graph, std::vector<SketchedSeq*>& reads);
     void remove_tagged_unitigs(std::vector<Unitig*>& utg_list);
     void get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_seqs);
+    int get_total_score(Node* start_node, int hap, int start_score, int steps_left);
 }
 
 #endif

@@ -2,6 +2,7 @@
 #include "graph.h"
 #include "syncmer.h"
 #include "utils.h"
+#include "phase.h"
 
 #include <algorithm>
 #include <cassert>
@@ -96,8 +97,8 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, std::vec
                 assert(dropped_start_idx != -1);
                 // at the end of a dropped block, so add to our list
                 if (dropped_start_bound != curr_node){
-                    first_drop_end = (size_t)dropped_start_idx + check_k_prime - 1;
-                    second_drop_end = (size_t)i;
+                    first_drop_end = dropped_start_idx + (int)check_k_prime - 1;
+                    second_drop_end = (int)i;
                     if(dropped_start_bound->get_unitig() == curr_node->get_unitig() || dropped_start_bound->get_unitig()->is_neighbors_with(curr_node->get_unitig())){
                         to_correct.emplace_back(dropped_start_bound, curr_node, dropped_start_idx, i - 1, dropped_start_bound->get_unitig() != curr_node->get_unitig());
                     }
@@ -754,7 +755,6 @@ bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc){
             }else{
                 compacted_back = this->trim_low_freq_end(curr_utg->get_back(), current_thresh, sorted_unitigs, check_dinuc);
             }
-            bool dropped_cross {false};
             if (check_dinuc && !(compacted_front || compacted_back)){
                 if(check_cross_pattern(curr_utg)){
                     Node* adj_node {curr_utg->get_front()->get_diff_unitig_neighbor()};
@@ -801,8 +801,8 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
     // and make sure it isn't a main bubble (true variation at a dinuc site)
     if (check_dinuc && node_end->end_is_dinucleotide() && num_checked == 2 && this->dinuc_topology(node_end, lower_utg)){
         std::cout << "Dropping based on dinucleotide criteria (utg " << lower_utg->get_id() << " dropped during check on utg" << curr_utg->get_id() << ")" << std::endl;
+        this->drop_unitig(sorted_list, node_end, lower_utg);
         assert(lower_utg != NULL);
-        bool compacted_graph = this->drop_unitig(sorted_list, node_end, lower_utg);
         return true;
     }
     return false;
@@ -967,6 +967,50 @@ bool Graph::any_connected_unitigs(){
     return false;
 }
 
+bool Graph::reassign_haplotype(Unitig* utg){
+    if (utg->is_locked()) return false;
+    utg->tally_reads();
+    int c1 = utg->get_hap_count(HAP1);
+    int c2 = utg->get_hap_count(HAP2);
+    int old_assign = utg->get_assignment();
+    if (c1 > 0 && c2 > 0) {
+        float h1_frac = (float)c1 / (float) c2;
+        if (h1_frac > 0.8){
+            utg->set_assignment(HAP1);
+        }else if (h1_frac < 0.2){
+            utg->set_assignment(HAP2);
+        }else{
+            utg->set_assignment(HOM);
+        }
+    }else if (c1 > 0) {
+        utg->set_assignment(HAP1);
+    }else if (c2 > 0){
+        utg->set_assignment(HAP2);
+    }else{
+        utg->set_assignment(UNASSIGNED);
+    }
+    bool flipped = old_assign != utg->get_assignment();
+    Unitig* par_utg = utg->get_parallel_utg();
+    if (par_utg != NULL && (utg->get_assignment() == HAP1 || utg->get_assignment() == HAP2)){
+        int par_assn = (utg->get_assignment() == HAP1) ? HAP2 : HAP1;
+        par_utg->set_assignment(par_assn);
+        if (flipped && utg->get_hap_flipped()){
+            if (utg->get_hap_frac(HAP1) >= par_utg->get_hap_frac(HAP1) || (utg->get_hap_frac(HAP1) == par_utg->get_hap_frac(HAP1) && utg->get_hap_count(HAP1) >= par_utg->get_hap_count(HAP1))){
+                utg->set_assignment(HAP1);
+                par_utg->set_assignment(HAP2);
+            }else{
+                utg->set_assignment(HAP2);
+                par_utg->set_assignment(HAP1);
+            }
+        }
+        if (old_assign != utg->get_assignment()){
+            utg->get_parallel_utg()->set_hap_flipped(true);
+        }
+    }
+    utg->set_hap_flipped(flipped);
+    return flipped;
+}
+
 void Graph::write_nodes_to_gfa(std::string& file_name, bool verbose){
     std::ofstream out_file(file_name);
     for (size_t i{0}; i < this->node_list.size(); i++){
@@ -1007,7 +1051,10 @@ void Graph::write_hpc_unitigs_to_gfa(std::string& file_name, bool verbose){
             }else{
                 out_file << "*\tLN:i:" << utg_seqs[i].size();
             }
-            out_file << "\tMF:i:" << curr_utg->get_median_freq() << '\n';
+            out_file << "\tMF:i:" << std::round(curr_utg->get_median_freq());
+            out_file << "\tHA:i:" << curr_utg->get_assignment();
+            out_file << "\tH1:i:" << curr_utg->get_hap_count(HAP1);
+            out_file << "\tH2:i:" << curr_utg->get_hap_count(HAP2) << '\n';
 
             if (curr_utg->num_nodes() > 1){
                 Node* front_node = curr_utg->get_front();
@@ -1073,6 +1120,38 @@ void Graph::free_unitig_if_empty(Unitig* to_check){
     }
 }
 
+void Graph::reset_haplotypes(){
+    for (size_t i{0}; i < this->unitig_list.size(); i++){
+        Unitig* utg = this->unitig_list[i];
+        if (utg != NULL){
+            utg->set_times_walked(0);
+            utg->set_walk_limit(std::min(1, (int)(this->get_median_coverage() / utg->get_median_freq())));
+        }
+    }
+}
+
+void Graph::update_median_coverage(){
+    std::vector<float> covs;
+    for (size_t i{0}; i < this->unitig_list.size(); i++){
+        Unitig* utg = this->unitig_list[i];
+        if (utg != NULL){
+            float val = utg->get_median_freq();
+            auto pos = std::lower_bound(covs.begin(), covs.end(), val);
+            covs.insert(pos, val);
+        }
+    }
+    assert(covs.size() > 0);
+    if (covs.size() % 2 == 0){
+        this->median_coverage = (float)(covs[covs.size() / 2] + covs[covs.size() / 2 - 1]) / (float)2.0;
+    }else{
+        this->median_coverage = (float)covs[covs.size() / 2];
+    }
+}
+
+float Graph::get_median_coverage(){
+    return this->median_coverage;
+}
+
 void Graph::print_nodes(bool verbose){
     for (size_t i{0}; i < this->node_list.size(); i++){
         if (node_list[i] != NULL){
@@ -1095,6 +1174,7 @@ void Graph::print_nodes(bool verbose){
 }
 
 void Graph::print_unitigs(bool verbose, bool print_seq){
+    std::cout << "Median frequency across all unitigs is " << this->get_median_coverage()  << std::endl;//mkl
     for (size_t i{0}; i < this->unitig_list.size(); i++){
         if (this->unitig_list[i] != NULL){
             if (verbose){

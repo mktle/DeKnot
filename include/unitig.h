@@ -43,12 +43,24 @@ class Unitig{
             
         int get_assignment();
         void set_assignment(int id);
+        void set_hap_count(int id, int count);
         int get_hap_count(int id);
+        float get_hap_frac(int id);
+        void set_hap_flipped(bool set);
+        bool get_hap_flipped();
+
+        void set_parallel_utg();
         Unitig* get_parallel_utg();
         void add_read(SketchedSeq*);
-        void assign_reads();
+        void assign_reads(bool lock);
         void tally_reads();
-        bool reassign_haplotype();
+        void lock_haplotype();
+        bool is_locked();
+        void set_times_walked(int val);
+        int get_times_walked();
+        void set_walk_limit(int val);
+        int get_walk_limit();
+        const std::vector<SketchedSeq*>& view_aligned_seqs();
 
         void list_nodes();
         void get_hpc_sequence(std::string& ret_seq, bool reverse, bool append);
@@ -69,6 +81,13 @@ class Unitig{
         // counts of reads assigned to them
         int hap1_count;
         int hap2_count;
+        bool hap_flipped;
+        // to prevent flipping during haplotype reassignment if this is a seed unitig
+        bool locked;
+        // e.g., for DUP nodes
+        int times_walked;
+        int walk_limit;
+        Unitig* parallel_utg;
 };
 
 bool compare_unitigs(Unitig* a, Unitig* b);

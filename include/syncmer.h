@@ -22,7 +22,8 @@ struct SketchedSeq{
     int num_tried;
     // for phasing
     int assignment;
-    SketchedSeq(std::string n, bool r) : name(n), is_read(r), num_tried(0), assignment(-1) {}
+    bool locked;
+    SketchedSeq(std::string n, bool r) : name(n), is_read(r), num_tried(0), assignment(-1), locked(false) {}
 };
 
 

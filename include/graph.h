@@ -74,10 +74,16 @@ class Graph {
         Node* get_node_from_lookup_table(KmerView& k_syncmer);
 
         bool any_connected_unitigs();
+        bool reassign_haplotype(Unitig* utg);
 
         void write_nodes_to_gfa(std::string& file_name, bool verbose);
         void write_hpc_unitigs_to_gfa(std::string& file_name, bool verbose);
         void free_unitig_if_empty(Unitig* to_check);
+
+        void reset_haplotypes();
+        void update_median_coverage();
+        float get_median_coverage();
+
         void print_nodes(bool verbose);
         void print_unitigs(bool verbose, bool print_seq);
         void get_all_hpc_seqs(std::vector<std::string>& hpc_seqs);
@@ -88,6 +94,7 @@ class Graph {
         dk_graph_t* convert_to_gfa_representation();
 
     private: 
+        float median_coverage;
         int k_prime;
         std::vector<Node*> node_list;
         std::vector<int> node_free_list;
