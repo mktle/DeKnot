@@ -25,10 +25,11 @@ void syncmer::sketch_sequences(int s, std::vector<std::string>& reads, std::vect
 }
 
 SketchedSeq* syncmer::split_sequence(SketchedSeq* init_seq, size_t idx_first, size_t idx_second){
+    if(init_seq->name == "m84039_230117_233243_s1/56365526/ccsM") std::cout << "splitting" << std::endl;//mkl
     assert(idx_first > 0);
     assert(idx_second < init_seq->kmers.size() - 2);
-    SketchedSeq* new_seq = new SketchedSeq(init_seq->name + "-2", init_seq->is_read);
-    init_seq->name = init_seq->name + "-1";
+    SketchedSeq* new_seq = new SketchedSeq(init_seq->name + "2", init_seq->is_read);
+    init_seq->name = init_seq->name + "1";
     new_seq->assignment = init_seq->assignment;
     new_seq->num_tried = init_seq->num_tried;
 

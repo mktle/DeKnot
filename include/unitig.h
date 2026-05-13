@@ -34,6 +34,7 @@ class Unitig{
 
         float get_median_freq();
         float get_base_freq();
+        bool self_connected();
         void update_median_freq();
         void set_base_freq(float set_freq);
         bool is_floating();

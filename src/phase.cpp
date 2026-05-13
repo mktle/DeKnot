@@ -3,8 +3,6 @@
 #include <cassert>
 #include <iostream>
 
-const int MAX_BACKTRACKS = 5;
-
 void phase::initialize_unitigs_for_tagging(Graph* graph, std::vector<SketchedSeq*>& reads, std::vector<Unitig*>& sorted_unitigs){
     graph->update_median_coverage();
     /************************
@@ -106,7 +104,8 @@ bool phase::reassign_partitions(Graph* graph, std::vector<SketchedSeq*>& reads){
                 char curr_orient = syncmer::canonical_syncmer(curr_kmers);
                 KmerView curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION};
                 Node* curr_node = graph->get_node_from_lookup_table(curr_canon);
-                if (curr_node != NULL && curr_node->get_unitig()->get_parallel_utg() != NULL){
+                //if (curr_node != NULL && curr_node->get_unitig()->get_parallel_utg() != NULL){
+                if (curr_node != NULL){
                     if (curr_node->get_unitig()->get_assignment() == HAP1) num1++;
                     if (curr_node->get_unitig()->get_assignment() == HAP2) num2++;
                 }
@@ -129,13 +128,10 @@ void phase::remove_tagged_unitigs(std::vector<Unitig*>& utg_list){
     utg_list.erase(new_end, utg_list.end());
 }
 
-void phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_seqs){
-    /***************************************************
-     * Identify which unitigs are at the end of a walk *
-     ***************************************************/
-    std::vector<Unitig*> hap1_endpoints;
-    std::vector<Unitig*> hap2_endpoints;
-    std::vector<Unitig*> hom_endpoints;
+void phase::identify_endpoints(Graph* graph, std::vector<std::vector<Unitig*>>& hap_endpoints, std::vector<Unitig*>& hom_endpoints){
+    hap_endpoints.resize(2);
+    auto& hap1_endpoints = hap_endpoints[0];
+    auto& hap2_endpoints = hap_endpoints[1];
 
     const std::vector<Unitig*> utgs = graph->view_unitigs();
     for (size_t i{0}; i < utgs.size(); i++){
@@ -159,124 +155,120 @@ void phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_
     std::sort(hap1_endpoints.begin(), hap1_endpoints.end(), compare_unitigs);
     std::sort(hap2_endpoints.begin(), hap2_endpoints.end(), compare_unitigs);
     std::sort(hom_endpoints.begin(), hom_endpoints.end(), compare_unitigs);
+}
 
-    std::vector<std::vector<Unitig*>*> hap_endpoints = {&hap1_endpoints, &hap2_endpoints};
+void phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_seqs){
+    std::vector<std::vector<Unitig*>> hap_endpoints;
+    std::vector<Unitig*> hom_endpoints;
+    phase::identify_endpoints(graph, hap_endpoints, hom_endpoints);
 
     /**********************
      * Get walk sequences *
      **********************/
+    Node* start_node = NULL;
     graph->update_median_coverage();
      for (size_t i = 0; i < 2; i++) {
         graph->reset_haplotypes();
-        auto& endpoints = *hap_endpoints[i];
-        auto& other_endpoints = *hap_endpoints[1 - i];
+        auto& endpoints = hap_endpoints[i];
+        auto& other_endpoints = hap_endpoints[1 - i];
 
         int hap_num = (i == 0) ? HAP1 : HAP2;
-        int other_hap_num = (i == 0) ? HAP2 : HAP1;
-        std::string walk_seq;
-        Unitig* curr_utg = NULL;
         // if none in this hap, both ends must be homozygous
         if (endpoints.size() > 0){
-            curr_utg = endpoints[0];
+            start_node = endpoints[0]->get_front()->neighbors_diff_utg() ? endpoints[0]->get_back() : endpoints[0]->get_front();
         }else if (hom_endpoints.size() > 0){
-            curr_utg = hom_endpoints[0];
+            start_node = hom_endpoints[0]->get_front()->neighbors_diff_utg() ? hom_endpoints[0]->get_back() : hom_endpoints[0]->get_front();
         }else{
-            // navigate to first 
+            // navigate to first
             Unitig* start_utg = other_endpoints[other_endpoints.size() - 1];
-            Node* start_node = start_utg->get_front()->neighbors_diff_utg() ? start_utg->get_front() : start_utg->get_back();
-            const std::vector<Edge>& neighs = start_node->view_neighbors();
+            Node* first_node = start_utg->get_front()->neighbors_diff_utg() ? start_utg->get_front() : start_utg->get_back();
+            const std::vector<Edge>& neighs = first_node->view_neighbors();
+            start_node = NULL;
             for (size_t j{0}; j < neighs.size(); j++){
-                Unitig* neigh_utg = neighs[j].neighbor->get_unitig();
-                if (neigh_utg != start_utg && (neigh_utg->get_assignment() == hap_num || (neigh_utg->get_assignment() == HOM && curr_utg == NULL))){
-                    curr_utg = neigh_utg;
+                Node* neigh = neighs[j].neighbor;
+                Unitig* neigh_utg = neigh->get_unitig();
+                if (neigh_utg != start_utg && (neigh_utg->get_assignment() == hap_num || (neigh_utg->get_assignment() == HOM && start_node == NULL))){
+                    start_node = neigh;
+                    if (neigh_utg->get_assignment() == hap_num) break;
                 }
             }
         }
-        Node* opp_node = curr_utg->get_front()->neighbors_diff_utg() ? curr_utg->get_front() : curr_utg->get_back();
-        curr_utg->get_hpc_sequence(walk_seq, opp_node == curr_utg->get_front(), false);
-        // while there are still more unitigs along the walk
-        while(opp_node->num_neighbors() > 1){
-            Node* next_end {NULL};
-            const std::vector<Edge>& opp_neighbors = opp_node->view_neighbors();
-            std::vector<Node*> hap_neighs;
-            std::vector<Node*> hom_neighs;
-            std::vector<Node*> other_neighs;
-            // find neighbor haplotype assignments
-            for (size_t i{0}; i < opp_neighbors.size(); i++){
-                Node* neigh = opp_neighbors[i].neighbor;
-                Unitig* neigh_utg = neigh->get_unitig();
-                if (neigh_utg->get_id() != opp_node->get_unitig()->get_id()){
-                    if (neigh_utg->get_assignment() == hap_num) hap_neighs.push_back(neigh);
-                    if(neigh_utg->get_assignment() == HOM) hom_neighs.push_back(neigh);
-                    if(neigh_utg->get_assignment() == other_hap_num) other_neighs.push_back(neigh);
-                }
+        std::vector<Walk> all_walks;
+        Walk* curr_walk = new Walk(NULL, 0);
+        // recursive function that adds all walks
+        add_to_walk(all_walks, curr_walk, start_node, hap_num);
+        delete curr_walk;
+
+        /*******************************************************
+         * Identify best walk and concatenate unitig sequences *
+         *******************************************************/
+        Walk best_walk = all_walks[0];
+        for (size_t j{1}; j < all_walks.size(); j++){
+            if(all_walks[j].num_hap_nodes > best_walk.num_hap_nodes){
+                best_walk = all_walks[j];
             }
-            // prioritize paths that are this haplotype, then homozygous, then other if needed
-            std::vector<Node*>* choices = NULL;
-            if (!hap_neighs.empty()) {
-                choices = &hap_neighs;
-            } else if (!hom_neighs.empty()) {
-                choices = &hom_neighs;
-            } else if (!other_neighs.empty()) {
-                choices = &other_neighs;
-            }
-            assert(choices != NULL);
-            if(choices->size() == 1){
-                next_end = (*choices)[0];
-            }else{
-                int best_score = -1;
-                Node* best_choice = NULL;
-                float best_frac = 0;
-                int best_other_num = 0;
-                for (Node* n : *choices){
-                    Unitig* n_utg = n->get_unitig();
-                    Node* curr_op = n_utg->opposite_end(n);
-                    int times_walked = n_utg->get_times_walked();
-                    if (times_walked < n_utg->get_walk_limit()){
-                        n_utg->set_times_walked(times_walked + 1);
-                        int curr_score = get_total_score(curr_op, hap_num, 0, MAX_BACKTRACKS);
-                        float curr_frac = n_utg->get_hap_frac(hap_num);
-                        int other_num = n_utg->get_hap_count(other_hap_num);
-                        if ((curr_score > best_score) || ((curr_score == best_score) && (curr_frac > best_frac)) || ((curr_score == best_score) && (curr_frac == best_frac) && (other_num < best_other_num))){
-                            best_score = curr_score;
-                            best_choice = n;
-                            best_frac = curr_frac;
-                            best_other_num = other_num;
-                        }
-                    }
-                }
-                next_end = best_choice;
-            }
-            if (next_end == NULL) break;
-            next_end->get_unitig()->set_times_walked(next_end->get_unitig()->get_times_walked() + 1);
-            next_end->get_unitig()->get_hpc_sequence(walk_seq, next_end == next_end->get_unitig()->get_back(), true);
-            opp_node = next_end->get_unitig()->opposite_end(next_end);
+        }
+        std::string walk_seq;
+        assert(best_walk.utgs[0] == start_node->get_unitig());
+        start_node->get_unitig()->get_hpc_sequence(walk_seq, start_node == start_node->get_unitig()->get_back(), false);
+
+        Node* exit_node = start_node->get_unitig()->opposite_end(start_node);
+        for (size_t j{1}; j < best_walk.utgs.size(); j++){
+            Node* next_node = (best_walk.utgs[j]->get_front()->is_neighbors_with(exit_node)) ? best_walk.utgs[j]->get_front() : best_walk.utgs[j]->get_back();
+            next_node->get_unitig()->get_hpc_sequence(walk_seq, next_node == next_node->get_unitig()->get_back(), true);
+            exit_node = next_node->get_unitig()->opposite_end(next_node);
         }
         ret_seqs.emplace_back(walk_seq);
     }
 }
 
-// called recursively to identify best local choce when multiple options
-int phase::get_total_score(Node* start_node, int hap, int start_score, int steps_left){
-    if (steps_left == 0){
-        return start_score;
+void phase::add_to_walk(std::vector<Walk>& all_walks, Walk* curr_walk, Node* to_add, int hap_num){
+    int other_hap_num = (hap_num == HAP1) ? HAP2 : HAP1;
+    Unitig* add_utg = to_add->get_unitig();
+    int times_walked = add_utg->get_times_walked();
+    // dead end
+    if (times_walked >= add_utg->get_walk_limit()){
+        all_walks.push_back(*curr_walk);
+        return;
     }
-    int best_score = start_score;
-    std::vector<Edge> neighs = start_node->view_neighbors();
-    for (size_t i{0}; i < neighs.size(); i++){
-        Node* neigh_node = neighs[i].neighbor;
-        Unitig* neigh_utg = neigh_node->get_unitig();
-        int times_walked = neigh_utg->get_times_walked();
-        if (neigh_utg != start_node->get_unitig() && times_walked + 1 < neigh_utg->get_walk_limit()){
-            int curr_weight = (neigh_utg->get_assignment() == hap || neigh_utg->get_assignment() == HOM) ? neigh_utg->num_nodes() : 0;
-            neigh_utg->set_times_walked(times_walked + 1);
-            Node* opp_node = neigh_utg->opposite_end(neigh_node);
-            neigh_utg->set_times_walked(times_walked);
-            int next_score = curr_weight + get_total_score(opp_node, hap, start_score + curr_weight, steps_left - 1);
-            if (next_score > best_score){
-                best_score = next_score;
-            }
+    add_utg->set_times_walked(times_walked + 1);
+    curr_walk->utgs.push_back(add_utg);
+    int hap_weight = (add_utg->get_assignment() == hap_num || add_utg->get_assignment() == HOM) ? add_utg->num_nodes() : 0;
+    curr_walk->num_hap_nodes += hap_weight;
+
+    Node* opp_node = add_utg->opposite_end(to_add);
+    const std::vector<Edge>& opp_neighbors = opp_node->view_neighbors();
+    std::vector<Node*> hap_neighs;
+    std::vector<Node*> other_neighs;
+    // find neighbor haplotype assignments
+    for (size_t i{0}; i < opp_neighbors.size(); i++){
+        Node* neigh = opp_neighbors[i].neighbor;
+        Unitig* neigh_utg = neigh->get_unitig();
+        if (neigh_utg->get_id() != opp_node->get_unitig()->get_id()){
+            if (neigh_utg->get_assignment() == hap_num) hap_neighs.push_back(neigh);
+            if(neigh_utg->get_assignment() == HOM) hap_neighs.push_back(neigh);
+            if(neigh_utg->get_assignment() == other_hap_num) other_neighs.push_back(neigh);
         }
     }
-    return best_score;
+    // prioritize paths that are this haplotype or homozygous, then other if needed
+    std::vector<Node*>* choices = NULL;
+    if (!hap_neighs.empty()) {
+        choices = &hap_neighs;
+    } else if (!other_neighs.empty()) {
+        choices = &other_neighs;
+    }else{
+        // no more neighbors to add
+        all_walks.push_back(*curr_walk);
+        add_utg->set_times_walked(times_walked);
+        curr_walk->utgs.pop_back();
+        curr_walk->num_hap_nodes -= hap_weight;
+        return;
+    }
+    for (size_t i{0}; i < choices->size(); i++){
+        Node* next = (*choices)[i];
+        phase::add_to_walk(all_walks, curr_walk, next, hap_num);
+    }
+    add_utg->set_times_walked(times_walked);
+    curr_walk->utgs.pop_back();
+    curr_walk->num_hap_nodes -= hap_weight;
 }

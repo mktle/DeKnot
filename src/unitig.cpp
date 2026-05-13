@@ -134,6 +134,26 @@ float Unitig::get_median_freq(){
     return this->median_freq + this->base_freq;
 }
 
+bool Unitig::self_connected(){
+    size_t num_same {0};
+    for (size_t i{0}; i < this->get_front()->view_neighbors().size(); i++){
+        Node* neigh = this->get_front()->view_neighbors()[i].neighbor;
+        if (neigh->get_unitig()->get_id() == this->get_id()){
+            num_same++;
+        }
+    }
+    if (num_same > 1) return true;
+    num_same = 0;
+    for (size_t i{0}; i < this->get_back()->view_neighbors().size(); i++){
+        Node* neigh = this->get_back()->view_neighbors()[i].neighbor;
+        if (neigh->get_unitig()->get_id() == this->get_id()){
+            num_same++;
+        }
+    }
+    if (num_same > 1) return true;
+    return false;
+}
+
 void Unitig::update_median_freq(){
     std::vector<int> counts;
     for (size_t i{0}; i < this->num_nodes(); i++){

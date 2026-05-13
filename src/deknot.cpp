@@ -10,9 +10,7 @@
 #include <fstream>
 #include <string>
 
-//const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150};
-const int DEBUG_CHECKPOINTS[] = {2, 3, 100, 250, 500, 750, 1000};
-//const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 150, 200, 250, 300, 310, 313, 314, 315, 316, 317, 318, 319, 320, 330, 340, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150};
+const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500, 1550};
 int DEBUG_IDX = 0;
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
@@ -21,7 +19,7 @@ void dk_opt_init(dk_opt_t* opt){
     memset(opt, 0, sizeof(dk_opt_t));
     opt->s = 9;
     opt->init_k_prime = 2;
-    opt->max_iterations = 550;
+    opt->max_iterations = 1000;
     opt->compact_thresh = 4;
     opt->return_hpc_utg = 0;
     opt->out_dir = NULL;
@@ -73,6 +71,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             // TODO: maybe just perform correction again but with the final unitigs?
             for (auto* seq : input_seqs){
                 if (seq->is_read) corrected_seqs.push_back(new SketchedSeq(*seq));
+
             }
         }
         if (opt->verbose){
@@ -116,7 +115,6 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         if (opt->verbose){
             std::cout << curr_graph->num_nodes() << " nodes after compaction" << std::endl;
             std::cout << curr_graph->num_unitigs() << " unitigs after compaction" << std::endl;
-            //curr_graph->print_unitigs(true, false);
         }
         curr_graph->add_unitigs_to_input(input_seqs, opt->s);
         if (prev_graph != NULL){
@@ -131,7 +129,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
     std::vector<Unitig*> utg_list;
     phase::initialize_unitigs_for_tagging(prev_graph, corrected_seqs, utg_list);
 
-    int round {0};//mkl
+    int round {0};
     while(utg_list.size() > 0){
         if (!phase::seed_initial_haplotypes(utg_list)){
             // no more bubbles, remaining unitigs are homozygous
@@ -140,31 +138,33 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             }
             break;
         }
-        std::string out_hpc {std::string(opt->out_dir) + "/round_" + std::to_string(round) + "_init.gfa"};
+        //std::string out_hpc {std::string(opt->out_dir) + "/round_" + std::to_string(round) + "_init.gfa"};
         //prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
         int it {0};
-        while(phase::reassign_partitions(prev_graph, corrected_seqs) && it < 20){
-            out_hpc = std::string(opt->out_dir) + "/round_" + std::to_string(round) + "_iter" + std::to_string(it) + ".gfa";
-            prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
+        while(phase::reassign_partitions(prev_graph, corrected_seqs) && it < 100){
+            //out_hpc = std::string(opt->out_dir) + "/round_" + std::to_string(round) + "_iter" + std::to_string(it) + ".gfa";
+            //prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
+            if (opt->verbose && it % 10 == 0) std::cout << "Phasing round " << round << ", iteration " << it << std::endl;
             it++;
         }
         phase::remove_tagged_unitigs(utg_list);
-        round++;//mkl
+        round++;
     }
 
-    prev_graph->print_unitigs(true, false);//mkl
-
-    std::string out_reads {std::string(opt->out_dir) + "/final_reads.fa"};//mkl
-    io::write_sequences(input_seqs, out_reads);//mkl
+    if (opt->verbose) prev_graph->print_unitigs(true, false);
 
     if (opt->out_dir != NULL){
+        //std::string out_reads {std::string(opt->out_dir) + "/final_reads.fa"};
+        //io::write_sequences(input_seqs, out_reads);//mkl
+
         std::string out_hpc {std::string(opt->out_dir) + "/final_hpc.gfa"};
         prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
+
+        std::vector<std::string> phased_walks;
+        phase::get_haplotype_sequences(prev_graph, phased_walks);
+        std::string out_walks {std::string(opt->out_dir) + "/final_walks.fa"};
+        io::write_walks(phased_walks, out_walks);
     }
-    std::vector<std::string> phased_walks;//mkl
-    phase::get_haplotype_sequences(prev_graph, phased_walks);//mkl
-    std::string out_walks {std::string(opt->out_dir) + "/final_walks.fa"};//mkl
-    io::write_walks(phased_walks, out_walks);//mkl
 
     dk_graph_t* ret_graph = prev_graph->convert_to_gfa_representation();
     if (opt->return_hpc_utg == 0){

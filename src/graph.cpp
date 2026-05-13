@@ -809,6 +809,7 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
 }
 
 bool Graph::dinuc_topology(Node* curr_end, Unitig* dropped_utg){
+    if (curr_end->get_unitig()->self_connected()) return false;
     // ask ourselves if we can get to the dropped_utg's other neighbor without going through the curr_utg's neighbors
     // if so, this is likely a dinucleotide error and not a real variant
     Unitig* curr_utg = curr_end->get_unitig();
@@ -974,7 +975,7 @@ bool Graph::reassign_haplotype(Unitig* utg){
     int c2 = utg->get_hap_count(HAP2);
     int old_assign = utg->get_assignment();
     if (c1 > 0 && c2 > 0) {
-        float h1_frac = (float)c1 / (float) c2;
+        float h1_frac = (float)c1 / (float)(c1 + c2);
         if (h1_frac > 0.8){
             utg->set_assignment(HAP1);
         }else if (h1_frac < 0.2){
@@ -1125,7 +1126,7 @@ void Graph::reset_haplotypes(){
         Unitig* utg = this->unitig_list[i];
         if (utg != NULL){
             utg->set_times_walked(0);
-            utg->set_walk_limit(std::min(1, (int)(this->get_median_coverage() / utg->get_median_freq())));
+            utg->set_walk_limit(std::max(1, (int)std::round(((float)utg->get_median_freq() / (float)this->get_median_coverage()))));
         }
     }
 }
@@ -1174,7 +1175,6 @@ void Graph::print_nodes(bool verbose){
 }
 
 void Graph::print_unitigs(bool verbose, bool print_seq){
-    std::cout << "Median frequency across all unitigs is " << this->get_median_coverage()  << std::endl;//mkl
     for (size_t i{0}; i < this->unitig_list.size(); i++){
         if (this->unitig_list[i] != NULL){
             if (verbose){
