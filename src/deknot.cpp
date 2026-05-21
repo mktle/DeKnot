@@ -10,7 +10,7 @@
 #include <fstream>
 #include <string>
 
-const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500, 1550};
+const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 110, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 140, 150, 160, 170, 180, 190, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 230, 240, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500, 1550};
 int DEBUG_IDX = 0;
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
@@ -89,14 +89,9 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             std::string out_reads {std::string(opt->out_dir) + "/k" + std::to_string(k_prime) + "_reads.fa"};
             io::write_sequences(input_seqs, out_reads);
         }
-        int times {0};
         bool check_dinuc {k_prime - init_k_prime > 100};
-        bool graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);
-        while(graph_changed && times < 10){
-            curr_graph->trim_tips();
-            graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);
-            times++;
-        }
+        curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);
+        curr_graph->trim_tips();
         curr_graph->remove_floaters(opt->compact_thresh);
         if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || is_checkpoint)){
             std::string out_unitigs_compacted {std::string(opt->out_dir) + "/compacted_k" + std::to_string(k_prime) + ".gfa"};
