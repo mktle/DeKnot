@@ -2,12 +2,14 @@
 #include "graph.h"
 #include "syncmer.h"
 #include "utils.h"
+#include "phase.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <queue>
 #include <string>
 
 Graph::Graph(int set_k_prime){
@@ -47,54 +49,250 @@ int Graph::num_unitigs(){
 }
 
 //  run *after* graph is completed (i.e., in the next iteration)
-// check if any of the nodes were dropped in this previous iteration (errors)
-// and check if the sequence is contained in a unitig from this previous iteration
-bool Graph::check_sequence(std::vector<uint64_t>& kmer_list, size_t check_k_prime, int& min_span){
-    // first k-syncmer
-    Span<uint64_t> first_kmers(kmer_list.data(), check_k_prime);
-    char first_orient = syncmer::canonical_syncmer(first_kmers);
-    KmerView first_canon = {first_kmers, first_orient == REVERSE_ORIENTATION};
+// check if the sequence is completely contained in a unitig from this previous iteration
+bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, std::vector<ConnectionSpan>& connections, SketchedSeq*& corrected_seq, SketchedSeq*& split_seq){
+    struct Segment {int utg_id; int span;};
+    std::vector<Segment> segments;
+    std::vector<DroppedBlock> to_correct;
+    size_t check_thresh = orig_seq->kmers.size() - check_k_prime + 1;
+    size_t i {0};
+    /****************************************
+     * Navigate to first non-null k-syncmer *
+     ****************************************/
+    Span<uint64_t> curr_kmers(orig_seq->kmers.data(), check_k_prime);
+    char curr_orient = syncmer::canonical_syncmer(curr_kmers);
+    KmerView curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION};
 
-    // if not in previous graph, was removed, so remove this sequence
-    Node* first_node = this->get_node_from_lookup_table(first_canon);
-    if (first_node == NULL){
-        min_span = -1;
-        return false;
+    // go to the first node that was not removed from the graph
+    Node* curr_node = this->get_node_from_lookup_table(curr_canon);
+    while (curr_node == NULL && i < check_thresh){
+        curr_kmers = Span(orig_seq->kmers.data() + i, check_k_prime);
+        curr_orient = syncmer::canonical_syncmer(curr_kmers);
+        curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION};
+        curr_node = this->get_node_from_lookup_table(curr_canon);
+        i++;
     }
+    // where we will start copying sequence from (i.e., drop errors on ends of reads)
+    size_t curr_orig_idx = i;
 
-    Unitig* first_utg = first_node->get_unitig();
-    Node* curr_node = NULL;
+    bool in_dropped {false};
+    Node* dropped_start_bound = NULL;
+    Node* prev_node = curr_node;
+    int dropped_start_idx {-1};
+    
+    int first_drop_end {-1};
+    int second_drop_end {-1};
 
-    // to calculate iteration jump
-    min_span = -1;
-    int curr_span {1};
-    Unitig* track_utg = first_utg;
-    size_t check_thresh = kmer_list.size() - check_k_prime + 1;
-    for(size_t i{1}; i < check_thresh; i++){
-        Span<uint64_t> kmers(kmer_list.data() + i, check_k_prime);
+    /************************************************
+     * Identify parts of the read that were dropped *
+     ************************************************/
+    for(; i < check_thresh; i++){
+        Span<uint64_t> kmers(orig_seq->kmers.data() + i, check_k_prime);
         char orient = syncmer::canonical_syncmer(kmers);
         KmerView canon = {kmers, orient == REVERSE_ORIENTATION};
-
         curr_node = this->get_node_from_lookup_table(canon);
-        if (curr_node == NULL){
-            min_span = -1;
-            return false;
-        }
-        if (curr_node->get_unitig() != track_utg){
-            if (min_span == -1 || curr_span < min_span){
-                min_span = curr_span;
+
+        if (curr_node != NULL){
+            if (in_dropped){
+                assert(dropped_start_idx != -1);
+                // at the end of a dropped block, so add to our list
+                if (dropped_start_bound != curr_node){
+                    first_drop_end = dropped_start_idx + (int)check_k_prime - 1;
+                    second_drop_end = (int)i;
+                    if(dropped_start_bound->get_unitig() == curr_node->get_unitig() || dropped_start_bound->get_unitig()->is_neighbors_with(curr_node->get_unitig())){
+                        to_correct.emplace_back(dropped_start_bound, curr_node, dropped_start_idx, i - 1, dropped_start_bound->get_unitig() != curr_node->get_unitig());
+                    }
+                }
+                in_dropped = false;
+                dropped_start_idx = -1;
             }
-            track_utg = curr_node->get_unitig();
-            curr_span = 0;
+            int curr_utg_id = curr_node->get_unitig()->get_id();
+            if (segments.empty() || segments.back().utg_id != curr_utg_id){
+                 segments.push_back({curr_utg_id, 1});
+            }else{
+                segments.back().span++;
+            }
+        }else if (!in_dropped){
+            //on a new section of dropped region
+            assert(prev_node != NULL);
+            in_dropped = true;
+            dropped_start_bound = prev_node;
+            dropped_start_idx = (int)i;
         }
-        curr_span++;
+        prev_node = curr_node;
     }
-    // contained in a utg iff start and end nodes are on the same unitig
-    if ((first_utg == curr_node->get_unitig()) && !(first_utg->node_is_endpoint(first_node)) && !(first_utg->node_is_endpoint(curr_node))){
-        min_span = -1;
-        return false;
+
+    // check if we need to drop other end of read because it contains an error
+    size_t read_stop_idx = in_dropped ? (size_t)dropped_start_idx : orig_seq->kmers.size();
+
+    /**************************************
+     * Correction on underlying sequences *
+     **************************************/
+    if (to_correct.size() > 0 || in_dropped || curr_orig_idx != 0 || read_stop_idx != orig_seq->kmers.size()){
+        corrected_seq = new SketchedSeq(orig_seq->name + "M", true);
+        corrected_seq->num_tried = orig_seq->num_tried;
+        for (size_t j{0}; j < to_correct.size(); j++){
+            // copy over the unaltered sequences
+            while (curr_orig_idx <= to_correct[j].start_idx + check_k_prime - 2){
+                corrected_seq->kmers.push_back(orig_seq->kmers[curr_orig_idx]);
+                corrected_seq->flipped.push_back(orig_seq->flipped[curr_orig_idx]);
+                corrected_seq->unique_seq_len.push_back(orig_seq->unique_seq_len[curr_orig_idx]);
+                curr_orig_idx++;
+            }
+            if (!to_correct[j].across_utgs){
+                this->correct_read_error_within_unitig(to_correct[j], corrected_seq);
+            }else if (to_correct[j].end1->get_unitig()->is_neighbors_with(to_correct[j].end2->get_unitig())){
+                this->correct_read_error_across_unitigs(to_correct[j], corrected_seq);
+            }
+            curr_orig_idx = to_correct[j].end_idx + check_k_prime;
+        }
+        while (curr_orig_idx < read_stop_idx){
+            corrected_seq->kmers.push_back(orig_seq->kmers[curr_orig_idx]);
+            corrected_seq->flipped.push_back(orig_seq->flipped[curr_orig_idx]);
+            corrected_seq->unique_seq_len.push_back(orig_seq->unique_seq_len[curr_orig_idx]);
+            curr_orig_idx++;
+        }
+    }else{
+        corrected_seq = NULL;
     }
-    return true;
+
+    connections.clear();
+    if (orig_seq->is_read){
+        for (size_t j = 1; j < segments.size(); j++){
+            if (segments[j-1].utg_id != segments[j].utg_id){
+                int a = std::min(segments[j-1].utg_id, segments[j].utg_id);
+                int b = std::max(segments[j-1].utg_id, segments[j].utg_id);
+                connections.push_back({a, b, std::min(segments[j-1].span, segments[j].span)});
+            }
+        }
+    }
+    // dropped portion but could not correct... if this happens too many times, remove
+    if (to_correct.size() == 0 && first_drop_end != -1){
+        orig_seq->num_tried++;
+        if (orig_seq->num_tried == 10){
+            split_seq = syncmer::split_sequence(orig_seq, (size_t)first_drop_end, (size_t)second_drop_end);
+        }
+    }
+    return segments.size() == 1;
+}
+
+void Graph::correct_read_error_within_unitig(DroppedBlock& dropped_block, SketchedSeq*& corrected_seq){
+    // now we're in a dropped block, so retrieve the kmers for replacement
+    // TODO: linear search is way too slow
+    const std::vector<Node*> utg_nodes = dropped_block.end1->get_unitig()->view_nodes();
+    int first_idx {-1};
+    int last_idx {-1};
+    for (size_t k{0}; k < utg_nodes.size(); k++){
+        if (first_idx != -1){
+            if (utg_nodes[k] == dropped_block.end2) break;
+            // within the region we are copying
+            bool flipped;
+            int unique_sl;
+            corrected_seq->kmers.push_back(utg_nodes[k]->unique_kmer_from_neigh(utg_nodes[k - 1], flipped, unique_sl));
+            corrected_seq->flipped.push_back(flipped);
+            corrected_seq->unique_seq_len.push_back(unique_sl);
+        }else {
+            if (utg_nodes[k] == dropped_block.end1){
+                first_idx = (int)k;
+                // already saw the other bookend node, so terminate
+                if (last_idx != -1) break;
+            }else if (utg_nodes[k] == dropped_block.end2){
+                last_idx = (int)k;
+            }
+        }
+    }
+    // if the sequence was backwards, add the relevant part now
+    if (last_idx != -1){
+        assert(last_idx < first_idx);
+        for (int k{first_idx - 1}; k > last_idx; k--){
+            bool flipped {false};
+            int unique_sl {-1};
+            corrected_seq->kmers.push_back(utg_nodes[(size_t)k]->unique_kmer_from_neigh(utg_nodes[(size_t)k + 1], flipped, unique_sl));
+            corrected_seq->flipped.push_back(flipped);
+            corrected_seq->unique_seq_len.push_back(unique_sl);
+        }
+    }
+}
+
+void Graph::correct_read_error_across_unitigs(DroppedBlock& dropped_block, SketchedSeq*& corrected_seq){
+    Unitig* utg1 = dropped_block.end1->get_unitig();
+    Unitig* utg2 = dropped_block.end2->get_unitig();
+    assert(utg1 != utg2);
+
+    /********************************************************
+     * Determine which parts of each unitig are on the walk *
+     ********************************************************/
+    bool utg1_frontside;
+    bool utg2_frontside;
+    
+    if (utg1->get_front()->is_neighbors_with(utg2->get_front())){
+        utg1_frontside = true;
+        utg2_frontside = true;
+    }else if(utg1->get_front()->is_neighbors_with(utg2->get_back())){
+        utg1_frontside = true;
+        utg2_frontside = false;
+    }else if(utg1->get_back()->is_neighbors_with(utg2->get_front())){
+        utg1_frontside = false;
+        utg2_frontside = true;
+    }else if(utg1->get_back()->is_neighbors_with(utg2->get_back())){
+        utg1_frontside = false;
+        utg2_frontside = false;
+    }else{
+        assert(0);
+    }
+
+    /***********************************
+     * Add kmers from the first unitig *
+     ***********************************/
+    const std::vector<Node*> utg1_nodes = utg1->view_nodes();
+    int k {0};
+    bool flipped {false};
+    int unique_sl {-1};
+    // find the endpoint in the unitig
+    while(utg1_nodes[(size_t)k] != dropped_block.end1){
+        k++;
+    }
+    if (utg1_frontside){
+        k--;
+        while(k >= 0){
+            corrected_seq->kmers.push_back(utg1_nodes[(size_t)k]->unique_kmer_from_neigh(utg1_nodes[(size_t)k+1], flipped, unique_sl));
+            corrected_seq->flipped.push_back(flipped);
+            corrected_seq->unique_seq_len.push_back(unique_sl);
+            k--;
+        }
+    }else{
+        k++;
+        while(k < utg1_nodes.size()){
+            corrected_seq->kmers.push_back(utg1_nodes[(size_t)k]->unique_kmer_from_neigh(utg1_nodes[(size_t)k-1], flipped, unique_sl));
+            corrected_seq->flipped.push_back(flipped);
+            corrected_seq->unique_seq_len.push_back(unique_sl);
+            k++;
+        }
+    }
+    /************************************
+     * Add kmers from the second unitig *
+     ************************************/
+    Node* last_node = utg1_frontside ? utg1->get_front() : utg1->get_back();
+    const std::vector<Node*> utg2_nodes = utg2->view_nodes();
+    if (utg2_frontside){
+        k = 0;
+        while(utg2_nodes[(size_t)k]->get_node_id() != dropped_block.end2->get_node_id()){
+            corrected_seq->kmers.push_back(utg2_nodes[(size_t)k]->unique_kmer_from_neigh(last_node, flipped, unique_sl));
+            corrected_seq->flipped.push_back(flipped);
+            corrected_seq->unique_seq_len.push_back(unique_sl);
+            last_node = utg2_nodes[(size_t)k];
+            k++;
+        }
+    }else{
+        k = (int)utg2_nodes.size() - 1;
+        while(utg2_nodes[(size_t)k]->get_node_id() != dropped_block.end2->get_node_id()){
+            corrected_seq->kmers.push_back(utg2_nodes[(size_t)k]->unique_kmer_from_neigh(last_node, flipped, unique_sl));
+            corrected_seq->flipped.push_back(flipped);
+            corrected_seq->unique_seq_len.push_back(unique_sl);
+            last_node = utg2_nodes[(size_t)k];
+            k--;
+        }
+    }
 }
 
 bool Graph::add_sequence(SketchedSeq& input_seq, Graph* prev_graph){
@@ -124,14 +322,14 @@ bool Graph::add_sequence(SketchedSeq& input_seq, Graph* prev_graph){
             if (!input_seq.is_read){
                 increment_val = prev_graph->k_plus_one_mer_count(first_kmers);
             }
-            this->increment_k_min_mer_count(increment_val, first_ksyncmer, first_flipped, first_unique_seq_len);
+            this->increment_k_min_mer_count(increment_val, input_seq.is_read, first_ksyncmer, first_flipped, first_unique_seq_len);
             first_connection = false;
         }
         int increment_val {1};
         if (!input_seq.is_read){
             increment_val = prev_graph->k_plus_one_mer_count(second_kmers);
         }
-        this->increment_k_min_mer_count(increment_val, second_ksyncmer, second_flipped, second_unique_seq_len);
+        this->increment_k_min_mer_count(increment_val, input_seq.is_read, second_ksyncmer, second_flipped, second_unique_seq_len);
 
         // add connection between these adjacent k-min-mers
         this->add_connection(first_ksyncmer, first_orient, second_ksyncmer, second_orient);
@@ -170,52 +368,105 @@ bool Graph::add_connection(KmerView& first, char first_orient, KmerView& second,
     Unitig* first_utg {first_node->get_unitig()};
     Unitig* second_utg {second_node->get_unitig()};
 
-    if (first_utg->node_is_endpoint(first_node) && second_utg->node_is_endpoint(second_node) && first_node->num_edges_in_dir(first_orient) == 1 && second_node->num_edges_in_dir(utils::reverse_orientation(second_orient)) == 1){
-         // merge unitigs into one
+    if (first_node == second_node){
+        this->handle_self_connection(first_node);
+    }else if (first_utg->node_is_endpoint(first_node) && second_utg->node_is_endpoint(second_node) && first_node->num_edges_in_dir(first_orient) == 1 && second_node->num_edges_in_dir(utils::reverse_orientation(second_orient)) == 1){
+        // merge unitigs into one
         if (first_utg != second_utg){
             this->merge_unitigs(first_node, second_node);
         }
     }else if (first_utg->node_is_endpoint(first_node) && second_utg->node_is_endpoint(second_node)){
-         // endpoints may need to be isolated into their own unitigs
-        if (first_node->num_edges_in_dir(first_utg->get_in_dir(first_node)) > 1){
-            if (first_utg->get_front() == first_node){
-                first_utg->pop_front();
-                this->free_unitig_if_empty(first_utg);
-            }else{
-                assert(first_utg->get_back() == first_node);
-                first_utg->pop_back();
-                this->free_unitig_if_empty(first_utg);
-            }
-            this->create_unitig_for_node(first_node);
-        }
-
-        if (first_node != second_node && second_node->num_edges_in_dir(second_utg->get_in_dir(second_node)) > 1){
-            if (second_utg->get_front() == second_node){
-                second_utg->pop_front();
-                this->free_unitig_if_empty(second_utg);
-            }else{
-                assert(second_utg->get_back() == second_node);
-                second_utg->pop_back();
-                this->free_unitig_if_empty(second_utg);
-            }
-            this->create_unitig_for_node(second_node);
-        }
+        this->check_endpoints(first_node, second_node);
     }else{
         // we have to break some unitigs apart, and the nodes will be connected but not on the same unitig
-        if (!first_utg->node_is_endpoint(first_node)){
-             // same_utg handles special case where the nodes are originally on the same unitig
+        this->check_endpoints(first_node, second_node);
+        first_utg = first_node->get_unitig();
+        second_utg = second_node->get_unitig();
+        if (!(first_utg->node_is_endpoint(first_node))){
+            // same_utg handles special case where the nodes are originally on the same unitig
             bool same_utg = (first_utg->get_id() == second_utg->get_id());
             bool second_orig_end = second_utg->node_is_endpoint(second_node);
             Unitig* new_utg = this->split_unitig(first_utg, first_node);
             if (same_utg && !second_orig_end){
-                this->split_unitig(new_utg, second_node);
+                if (first_utg->contains_node(second_node)){
+                    this->split_unitig(first_utg, second_node);
+                }else{
+                    assert(new_utg->contains_node(second_node));
+                    this->split_unitig(new_utg, second_node);
+                }
             }
+            first_utg = first_node->get_unitig();
+            second_utg = second_node->get_unitig();
         }
         if (!second_utg->node_is_endpoint(second_node)){
             this->split_unitig(second_utg, second_node);
         }
     }
     return true;
+}
+
+void Graph::handle_self_connection(Node* node){
+    Unitig* utg = node->get_unitig();
+    Unitig* new_utg = NULL;
+    if (utg->num_nodes() > 1){
+        // isolate node into its own unitig
+        if (utg->get_front() != node && utg->get_back() != node){
+            new_utg = this->split_unitig(utg, node);
+            // case where node is on the end of the new unitig
+            if (new_utg->get_back() == node){
+                new_utg->pop_back();
+                this->create_unitig_for_node(node);
+            }else{
+                assert(utg->get_front() == node);
+                // case where node is at the beginning of the old unitig
+                utg->pop_front();
+                this->create_unitig_for_node(node);
+            }
+        }else{
+            //either at the beginning or end of utg
+            if (utg->get_front() == node){
+                utg->pop_front();
+                this->create_unitig_for_node(node);
+            }else if(utg->get_back() == node){
+                utg->pop_back();
+                this->create_unitig_for_node(node);
+            }
+        }
+    }
+    assert(node->get_unitig()->num_nodes() == 1);
+    utg->get_median_freq();
+    if (new_utg != NULL) utg->get_median_freq();
+    this->free_unitig_if_empty(utg);
+    if (new_utg != NULL) this->free_unitig_if_empty(new_utg);
+}
+
+void Graph::check_endpoints(Node* first_node, Node* second_node){
+    Unitig* first_utg = first_node->get_unitig();
+    Unitig* second_utg = second_node->get_unitig();
+    // endpoints may need to be isolated into their own unitigs
+    if (first_utg->node_is_endpoint(first_node) && first_node->num_edges_in_dir(first_utg->get_in_dir(first_node)) > 1){
+        if (first_utg->get_front() == first_node){
+            first_utg->pop_front();
+            this->free_unitig_if_empty(first_utg);
+        }else{
+            assert(first_utg->get_back() == first_node);
+            first_utg->pop_back();
+            this->free_unitig_if_empty(first_utg);
+        }
+        this->create_unitig_for_node(first_node);
+    }
+
+    if (first_node != second_node && second_utg->node_is_endpoint(second_node) && second_node->num_edges_in_dir(second_utg->get_in_dir(second_node)) > 1){
+        if (second_utg->get_front() == second_node){
+            second_utg->pop_front();
+            this->free_unitig_if_empty(second_utg);
+        }else{
+            assert(second_utg->get_back() == second_node);
+            second_utg->pop_back();
+            this->free_unitig_if_empty(second_utg);
+        }
+        this->create_unitig_for_node(second_node);
+    }
 }
 
 // the nodes of the second unitig will be dumped into the first unitig
@@ -294,7 +545,7 @@ int Graph::next_unitig_id(){
 
 // k_min_mer should be reversed already for lookup
 // but the bookkeping structures won't be (to reduce number of copies)
-void Graph::increment_k_min_mer_count(int increment, KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx){
+void Graph::increment_k_min_mer_count(int increment, bool is_read, KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx){
     Node* node_ptr = get_node_from_lookup_table(k_syncmer);
     if (node_ptr == NULL){
         // have not encountered this k_min_mer before, so need to create a new node and unitig
@@ -305,8 +556,14 @@ void Graph::increment_k_min_mer_count(int increment, KmerView& k_syncmer, Span<u
         this->add_node_to_lookup_table(new_node);
         new_node->set_count(increment);
     }else{
-        // have already encountered this k_min_mer, so we just need to increment count
-        node_ptr->set_count(node_ptr->get_count() + increment);
+        if (is_read){
+            // have already encountered this k_min_mer, so we just need to increment count
+            node_ptr->set_count(node_ptr->get_count() + increment);
+        }else{
+            // unitig counts already include reads from prev iteration;
+            // use max to avoid double-counting
+            node_ptr->set_count(std::max(node_ptr->get_count(), increment));
+        }
     }
 }
 
@@ -323,15 +580,13 @@ int Graph::k_plus_one_mer_count(Span<uint64_t>& k_syncmer){
     // find the minimum value across all sub-(k'-n)-syncmers
     Span<uint64_t> copy = Span(k_syncmer.data(), (size_t)this->k_prime);
     KmerView canon = {copy, syncmer::canonical_syncmer(copy) == REVERSE_ORIENTATION};
-    assert(this->node_table.count(canon) > 0);
-    int min_val = this->node_table[canon]->get_count();
+    int min_val = this->node_table.count(canon) > 0 ? this->node_table[canon]->get_count() : 1;
 
     // check all the other (k'-n) syncmers
     for (int i{0}; i < curr_k_prime - (size_t)this->k_prime; i++){
         copy = Span(k_syncmer.data() + i + 1, (size_t)this->k_prime);
         canon = {copy, syncmer::canonical_syncmer(copy) == REVERSE_ORIENTATION};
-        assert(this->node_table.count(canon) > 0);
-        int curr_val {this->node_table[canon]->get_count()};
+        int curr_val = this->node_table.count(canon) > 0 ? this->node_table[canon]->get_count() : 1;
         if (curr_val < min_val){
             min_val = curr_val;
         }
@@ -362,7 +617,7 @@ void Graph::destroy_unitig(Unitig* to_remove){
     this->unitig_list[(size_t)to_remove->get_id()] = NULL;
     this->unitig_free_list.push_back(to_remove->get_id());
     // free all nodes
-    
+
     const std::vector<Node*> members = to_remove->view_nodes();
     for (size_t i{0}; i < members.size(); i++){
         this->destroy_node(members[i]);
@@ -388,13 +643,42 @@ void Graph::create_unitig_for_node(Node* node){
     node->assign_unitig(new_utg);
 }
 
-void Graph::remove_floaters(int threshold){
-    for (size_t i{0}; i < this->unitig_list.size(); i++){
-        Unitig* utg = this->unitig_list[i];
-        if (utg != NULL && utg->is_floating() && utg->get_median_freq() <= threshold){
-            this->destroy_unitig(utg);
-        }
-    }
+bool Graph::check_cross_pattern(Unitig* to_check){
+    if (to_check->get_front() == to_check->get_back()) return false;
+
+    if (!(to_check->get_front()->num_neighbors() == 2 && to_check->get_back()->num_neighbors() == 2)) return false;
+
+    // check for having only two unitig-level neighbors
+    Node* im_front {to_check->get_front()->get_diff_unitig_neighbor()};
+    Node* im_back {to_check->get_back()->get_diff_unitig_neighbor()};
+    if (im_front == NULL || im_back == NULL) return false;
+    if (!(im_front->num_neighbors() == 3 && im_back->num_neighbors() == 3)) return false;
+
+    // check that the next unitig extended from each immediate neighbor is the only neighbor
+    Node* op_im_front {im_front->get_unitig()->opposite_end(im_front)};
+    Node* op_im_back {im_back->get_unitig()->opposite_end(im_back)};
+    if (!(op_im_front->num_neighbors() == 2 && op_im_back->num_neighbors() == 2)) return false;
+
+    Node* pinch_front {op_im_front->get_diff_unitig_neighbor()};
+    Node* pinch_back {op_im_back->get_diff_unitig_neighbor()};
+    if (pinch_front == NULL || pinch_back == NULL) return false;
+    if (!(pinch_front->num_neighbors() == 3 && pinch_back->num_neighbors() == 3)) return false;
+
+    // now find the unitig that is parallel to the unitig being checked with respect to very first neighbor
+    Node* front_parallel {im_front->get_parallel_neigh(to_check)};
+    Node* back_parallel {im_back->get_parallel_neigh(to_check)};
+    if (front_parallel == NULL || back_parallel == NULL) return false;
+
+    // now find the unitig that is parallel to the endpoints
+    Node* pinch_front_parallel {pinch_front->get_parallel_neigh(im_front->get_unitig())};
+    Node* pinch_back_parallel {pinch_back->get_parallel_neigh(im_back->get_unitig())};
+    if (pinch_front_parallel == NULL || pinch_back_parallel == NULL) return false;
+
+    // now check for cross pattern
+    if (!(pinch_front_parallel->get_unitig() == back_parallel->get_unitig())) return false;
+    if (!(pinch_back_parallel->get_unitig() == front_parallel->get_unitig())) return false;
+
+    return true;
 }
 
 void Graph::trim_tips(){
@@ -413,18 +697,30 @@ void Graph::trim_tips(){
 
         while(sorted_unitigs.size() > 0){
             Unitig* utg = sorted_unitigs.back();
+            sorted_unitigs.pop_back();
+            if (utg == NULL){
+                continue;
+            }
             Node* keep_node;
             Node* inner_end = utg->get_tip_inner_end(keep_node);
             if (inner_end != NULL){
                 assert(keep_node != NULL);
                 Unitig* keep_utg = keep_node->get_unitig();
-                if (utg->get_median_freq() < 0.2 * keep_utg->get_median_freq()){
+                if (utg->get_median_freq() < 0.5 * keep_utg->get_median_freq() && utg->num_nodes() < 500){
                     changed = true;
                     this->disconnect_unitig_end(inner_end, keep_utg, sorted_unitigs);
                     this->destroy_unitig(utg);
                 }
             }
-            sorted_unitigs.pop_back();
+        }
+    }
+}
+
+void Graph::remove_floaters(int threshold){
+    for (size_t i{0}; i < this->unitig_list.size(); i++){
+        Unitig* utg = this->unitig_list[i];
+        if (utg != NULL && utg->is_floating() && utg->get_median_freq() <= threshold){
+            this->destroy_unitig(utg);
         }
     }
 }
@@ -432,7 +728,6 @@ void Graph::trim_tips(){
 bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc){
     // we will start by merging from longer unitigs
     // so first sort the unitigs by length
-
     // make sure the median frequency is updated for each unitig
     std::vector<Unitig*> sorted_unitigs;
     for (size_t i{0}; i < this->unitig_list.size(); i++){
@@ -444,11 +739,12 @@ bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc){
     }
     std::sort(sorted_unitigs.begin(), sorted_unitigs.end(), compare_unitigs);
     bool graph_changed {false};
-    while(sorted_unitigs.size() > 0){
-        Unitig* curr_utg = sorted_unitigs.front();
-        assert(curr_utg != NULL);
+    for (size_t idx{0}; idx < sorted_unitigs.size(); idx++){
+        Unitig* curr_utg = sorted_unitigs[idx];
+        if (curr_utg == NULL){
+            continue;
+        }
         assert(curr_utg->num_nodes() > 0);
-
         float current_thresh {2};
         while (current_thresh <= threshold){
             bool compacted_front = this->trim_low_freq_end(curr_utg->get_front(), current_thresh, sorted_unitigs, check_dinuc);
@@ -459,7 +755,14 @@ bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc){
             }else{
                 compacted_back = this->trim_low_freq_end(curr_utg->get_back(), current_thresh, sorted_unitigs, check_dinuc);
             }
-
+            if (check_dinuc && !(compacted_front || compacted_back)){
+                if(check_cross_pattern(curr_utg)){
+                    Node* adj_node {curr_utg->get_front()->get_diff_unitig_neighbor()};
+                    this->drop_unitig(sorted_unitigs, adj_node, curr_utg);
+                    graph_changed = true;
+                    break;
+                }
+            }
             if (compacted_front || compacted_back){
                 // if either of the ends extended the unitig after dropping unitigs, then start the compaction process over
                 current_thresh = 2;
@@ -468,7 +771,6 @@ bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc){
                 current_thresh++;
             }
         }
-        sorted_unitigs.erase(sorted_unitigs.begin());
     }
     return graph_changed;
 }
@@ -484,8 +786,8 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
         Unitig* neigh_utg = neigh_node->get_unitig();
         if (neigh_utg != curr_utg){
             if (neigh_utg->get_median_freq() < thresh){
-                bool compacted_graph = this->drop_unitig(sorted_list, curr_utg, neigh_utg);
-                if (compacted_graph) return true;
+                this->drop_unitig(sorted_list, node_end, neigh_utg);
+                return true;
             }else{
                 num_checked++;
                 if (lower_utg == NULL || neigh_utg->get_median_freq() < lowest_freq){
@@ -496,20 +798,89 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
         }
     }
     // compacted no neighbors based on frequency, so check for branching dinucleotide site
-    if (check_dinuc && node_end->end_is_dinucleotide() && num_checked == 2){
-        std::cout << "Dropping based on dinucleotide criteria (utg " << lower_utg->get_id() << " dropped during check on utg" << curr_utg->get_id() << ")" << std::endl;//mkl
+    // and make sure it isn't a main bubble (true variation at a dinuc site)
+    if (check_dinuc && node_end->end_is_dinucleotide() && num_checked == 2 && this->dinuc_topology(node_end, lower_utg)){
+        std::cout << "Dropping based on dinucleotide criteria (utg " << lower_utg->get_id() << " dropped during check on utg" << curr_utg->get_id() << ")" << std::endl;
+        this->drop_unitig(sorted_list, node_end, lower_utg);
         assert(lower_utg != NULL);
-        bool compacted_graph = this->drop_unitig(sorted_list, curr_utg, lower_utg);
-        return compacted_graph;
+        return true;
     }
     return false;
 }
 
-bool Graph::drop_unitig(std::vector<Unitig*>& sorted_list, Unitig* curr_utg, Unitig* neigh_utg){
+bool Graph::dinuc_topology(Node* curr_end, Unitig* dropped_utg){
+    if (curr_end->get_unitig()->self_connected()) return false;
+    // ask ourselves if we can get to the dropped_utg's other neighbor without going through the curr_utg's neighbors
+    // if so, this is likely a dinucleotide error and not a real variant
+    Unitig* curr_utg = curr_end->get_unitig();
+    const std::vector<Edge> neighbors = curr_end->view_neighbors();
+    ankerl::unordered_dense::set<Node*> seen_nodes;
+    seen_nodes.insert(curr_end);
+    for (size_t i{0}; i < neighbors.size(); i++){
+        Node* neigh_node = neighbors[i].neighbor;
+        Unitig* neigh_utg = neigh_node->get_unitig();
+        if (neigh_utg != dropped_utg && neigh_utg != curr_utg){
+            seen_nodes.insert(neigh_node);
+            seen_nodes.insert(neigh_utg->opposite_end(neigh_node));
+        }
+    }
+    // perform a graph search for maximum of 15 iterations
+    std::queue<Node*> to_check;
+    Node* start = curr_utg->opposite_end(curr_end);
+    seen_nodes.insert(start);
+    to_check.push(start);
+    to_check.push(NULL);
+    seen_nodes.insert(curr_end);
+    int round_num {0};
+    while(to_check.size() > 0){
+        Node* curr_node {to_check.front()};
+        to_check.pop();
+        if (curr_node == NULL){
+            round_num++;
+            if (round_num == 15) return false;
+            to_check.push(NULL);
+            continue;
+        }
+
+        const std::vector<Edge> curr_neighbors = curr_node->view_neighbors();
+        for (size_t i{0}; i < curr_neighbors.size(); i++){
+            Node* neigh_node = curr_neighbors[i].neighbor;
+            Unitig* neigh_utg = neigh_node->get_unitig();
+            if (curr_node->get_unitig() != neigh_utg){
+                if (neigh_utg == dropped_utg){
+                    return true;
+                }
+                if (seen_nodes.find(neigh_node) == seen_nodes.end()){
+                    seen_nodes.insert(neigh_node);
+                    to_check.push(neigh_node);
+                }
+            }
+        }
+        Node* curr_op = curr_node->get_unitig()->opposite_end(curr_node);
+        if (seen_nodes.find(curr_op) == seen_nodes.end()){
+            seen_nodes.insert(curr_op);
+            to_check.push(curr_op);
+        }
+    }
+    return false;
+}
+
+bool Graph::drop_unitig(std::vector<Unitig*>& sorted_list, Node* curr_node, Unitig* neigh_utg){
+    Unitig* curr_utg = curr_node->get_unitig();
     auto it = std::find(sorted_list.begin(), sorted_list.end(), neigh_utg);
     if(it != sorted_list.end()){
-        sorted_list.erase(it);
+        *it = NULL;
     }
+    // first handle special case where the dropped unitig is connected to curr unitig on both ends
+    /*
+    if (neigh_utg->num_nodes() > 1 && curr_node->is_neighbors_with(neigh_utg->get_front()) && curr_node->is_neighbors_with(neigh_utg->get_back())){
+        curr_node->remove_neighbor(neigh_utg->get_front());
+        curr_node->remove_neighbor(neigh_utg->get_back());
+        this->destroy_unitig(neigh_utg);
+        return false;
+    }
+    */
+
     bool compacted_front = this->disconnect_unitig_end(neigh_utg->get_front(), curr_utg, sorted_list);
     bool compacted_back;
     if (neigh_utg->get_front() == neigh_utg->get_back()){
@@ -530,7 +901,6 @@ bool Graph::disconnect_unitig_end(Node* remove_node, Unitig* keep_utg, std::vect
     assert(remove_utg->node_is_endpoint(remove_node));
 
     const std::vector<Edge> remove_neighbors = remove_node->view_neighbors();
-
     // remove the endpoint node from its neighbors' edges
     bool compacted {false};
     for (size_t i{0}; i < remove_neighbors.size(); i++){
@@ -563,7 +933,7 @@ bool Graph::disconnect_unitig_end(Node* remove_node, Unitig* keep_utg, std::vect
                         }
                         auto it = std::find(sorted_list.begin(), sorted_list.end(), donor->get_unitig());
                         if (it != sorted_list.end()){
-                            sorted_list.erase(it);
+                            *it = NULL;
                         }
 
                         this->merge_unitigs(recipient, donor);
@@ -596,6 +966,50 @@ bool Graph::any_connected_unitigs(){
         }
     }
     return false;
+}
+
+bool Graph::reassign_haplotype(Unitig* utg){
+    if (utg->is_locked()) return false;
+    utg->tally_reads();
+    int c1 = utg->get_hap_count(HAP1);
+    int c2 = utg->get_hap_count(HAP2);
+    int old_assign = utg->get_assignment();
+    if (c1 > 0 && c2 > 0) {
+        float h1_frac = (float)c1 / (float)(c1 + c2);
+        if (h1_frac > 0.8){
+            utg->set_assignment(HAP1);
+        }else if (h1_frac < 0.2){
+            utg->set_assignment(HAP2);
+        }else{
+            utg->set_assignment(HOM);
+        }
+    }else if (c1 > 0) {
+        utg->set_assignment(HAP1);
+    }else if (c2 > 0){
+        utg->set_assignment(HAP2);
+    }else{
+        utg->set_assignment(UNASSIGNED);
+    }
+    bool flipped = old_assign != utg->get_assignment();
+    Unitig* par_utg = utg->get_parallel_utg();
+    if (par_utg != NULL && (utg->get_assignment() == HAP1 || utg->get_assignment() == HAP2)){
+        int par_assn = (utg->get_assignment() == HAP1) ? HAP2 : HAP1;
+        par_utg->set_assignment(par_assn);
+        if (flipped && utg->get_hap_flipped()){
+            if (utg->get_hap_frac(HAP1) >= par_utg->get_hap_frac(HAP1) || (utg->get_hap_frac(HAP1) == par_utg->get_hap_frac(HAP1) && utg->get_hap_count(HAP1) >= par_utg->get_hap_count(HAP1))){
+                utg->set_assignment(HAP1);
+                par_utg->set_assignment(HAP2);
+            }else{
+                utg->set_assignment(HAP2);
+                par_utg->set_assignment(HAP1);
+            }
+        }
+        if (old_assign != utg->get_assignment()){
+            utg->get_parallel_utg()->set_hap_flipped(true);
+        }
+    }
+    utg->set_hap_flipped(flipped);
+    return flipped;
 }
 
 void Graph::write_nodes_to_gfa(std::string& file_name, bool verbose){
@@ -638,7 +1052,10 @@ void Graph::write_hpc_unitigs_to_gfa(std::string& file_name, bool verbose){
             }else{
                 out_file << "*\tLN:i:" << utg_seqs[i].size();
             }
-            out_file << "\tMF:i:" << curr_utg->get_median_freq() << '\n';
+            out_file << "\tMF:i:" << std::round(curr_utg->get_median_freq());
+            out_file << "\tHA:i:" << curr_utg->get_assignment();
+            out_file << "\tH1:i:" << curr_utg->get_hap_count(HAP1);
+            out_file << "\tH2:i:" << curr_utg->get_hap_count(HAP2) << '\n';
 
             if (curr_utg->num_nodes() > 1){
                 Node* front_node = curr_utg->get_front();
@@ -704,6 +1121,38 @@ void Graph::free_unitig_if_empty(Unitig* to_check){
     }
 }
 
+void Graph::reset_haplotypes(){
+    for (size_t i{0}; i < this->unitig_list.size(); i++){
+        Unitig* utg = this->unitig_list[i];
+        if (utg != NULL){
+            utg->set_times_walked(0);
+            utg->set_walk_limit(std::max(1, (int)std::round(((float)utg->get_median_freq() / (float)this->get_median_coverage()))));
+        }
+    }
+}
+
+void Graph::update_median_coverage(){
+    std::vector<float> covs;
+    for (size_t i{0}; i < this->unitig_list.size(); i++){
+        Unitig* utg = this->unitig_list[i];
+        if (utg != NULL){
+            float val = utg->get_median_freq();
+            auto pos = std::lower_bound(covs.begin(), covs.end(), val);
+            covs.insert(pos, val);
+        }
+    }
+    assert(covs.size() > 0);
+    if (covs.size() % 2 == 0){
+        this->median_coverage = (float)(covs[covs.size() / 2] + covs[covs.size() / 2 - 1]) / (float)2.0;
+    }else{
+        this->median_coverage = (float)covs[covs.size() / 2];
+    }
+}
+
+float Graph::get_median_coverage(){
+    return this->median_coverage;
+}
+
 void Graph::print_nodes(bool verbose){
     for (size_t i{0}; i < this->node_list.size(); i++){
         if (node_list[i] != NULL){
@@ -727,12 +1176,12 @@ void Graph::print_nodes(bool verbose){
 
 void Graph::print_unitigs(bool verbose, bool print_seq){
     for (size_t i{0}; i < this->unitig_list.size(); i++){
-        if (unitig_list[i] != NULL){
+        if (this->unitig_list[i] != NULL){
             if (verbose){
                 unitig_list[i]->print(false);
                 if (print_seq){
                     std::string sequence {""};
-                    this->unitig_list[i]->get_hpc_sequence(sequence);
+                    this->unitig_list[i]->get_hpc_sequence(sequence, false, false);
                     std::cout << sequence << std::endl;
                 }
             }else{
@@ -750,7 +1199,7 @@ void Graph::get_all_hpc_seqs(std::vector<std::string>& hpc_seqs){
         Unitig* utg = this->unitig_list[i];
         std::string sequence{""};
         if (utg != NULL){
-            utg->get_hpc_sequence(sequence);
+            utg->get_hpc_sequence(sequence, false, false);
         }
         // need to push back an empty string for deleted unitigs as well so indices line up later
         hpc_seqs.push_back(std::move(sequence));
@@ -762,7 +1211,7 @@ void Graph::add_unitigs_to_input(std::vector<SketchedSeq*>& input_seqs, int s){
         Unitig* utg = this->unitig_list[i];
         if (utg != NULL){
             std::string seq_str {""};
-            utg->get_hpc_sequence(seq_str);
+            utg->get_hpc_sequence(seq_str, false, false);
             std::vector<int> indices;
             std::string name {"utg" + std::to_string(i)};
             SketchedSeq* curr_seq = new SketchedSeq(name, false);
@@ -770,6 +1219,10 @@ void Graph::add_unitigs_to_input(std::vector<SketchedSeq*>& input_seqs, int s){
             syncmer::get_all_syncmers(seq_str, s, curr_seq->kmers, curr_seq->flipped, curr_seq->unique_seq_len, indices);
         }
     }
+}
+
+const std::vector<Unitig*>& Graph::view_unitigs(){
+    return this->unitig_list;
 }
 
 dk_graph_t* Graph::convert_to_gfa_representation(){
@@ -799,7 +1252,7 @@ dk_graph_t* Graph::convert_to_gfa_representation(){
             // copy over unitig sequence 
             int new_id = new_utg_ids[(int)i];
             std::string sequence;
-            curr_utg->get_hpc_sequence(sequence);
+            curr_utg->get_hpc_sequence(sequence, false, false);
             gfa_rep->unitigs[new_id] = new char[sequence.size() + 1];
             std::strcpy(gfa_rep->unitigs[new_id], sequence.c_str());
 

@@ -31,6 +31,7 @@ class Node{
         void assign_unitig(Unitig* new_ptr);
         bool is_assigned_to_unitig();
         bool is_neighbors_with(Node* to_check);
+        uint64_t unique_kmer_from_neigh(Node* neigh, bool& flipped, int& unique_seq_len);
         int num_neighbors();
         int num_kmers();
         int get_node_id();
@@ -43,11 +44,14 @@ class Node{
         uint64_t get_front_hash();
         uint64_t get_back_hash();
         bool neighbors_diff_utg();
+        Node* get_diff_unitig_neighbor();
+        Node* get_parallel_neigh(Unitig* in_utg);
         int longest_neighbor_utg_length();
         const std::vector<Edge>& view_neighbors();
         bool is_tip();
         void get_hpc_sequence(std::string& ret_str, bool reverse);
         bool end_is_dinucleotide();
+        void print_kmers();
         void print(bool verbose);
 
     private:

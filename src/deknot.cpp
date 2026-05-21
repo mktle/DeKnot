@@ -1,5 +1,8 @@
 #include "deknot.h"
 #include "graph.h"
+#include "hash.h"
+#include "io.h"
+#include "phase.h"
 
 #include <cassert>
 #include <cmath>
@@ -7,16 +10,16 @@
 #include <fstream>
 #include <string>
 
-//const int DEBUG_CHECKPOINTS[] = {1888, 1786, 1589, 1554, 1452, 1017, 968, 966, 964};
-const int DEBUG_CHECKPOINTS[] = {1437, 1366, 1141, 697, 653, 617, 564, 551, 549, 523, 521, 520};
+const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 110, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 140, 150, 160, 170, 180, 190, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 230, 240, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500, 1550};
+int DEBUG_IDX = 0;
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 
 void dk_opt_init(dk_opt_t* opt){
     memset(opt, 0, sizeof(dk_opt_t));
     opt->s = 9;
-    opt->init_k_prime = 350;
-    opt->max_iterations = 10000;
+    opt->init_k_prime = 2;
+    opt->max_iterations = 1000;
     opt->compact_thresh = 4;
     opt->return_hpc_utg = 0;
     opt->out_dir = NULL;
@@ -30,14 +33,23 @@ int dk_set_opt(const char* preset, dk_opt_t* opt){
     return 0;
 }
 
-dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, int n_reads){
+dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names, int n_reads){
     /************************************************************
      * Initialization (convert to C++ structures, sketch reads) *
      ************************************************************/
+    hash::initialize_dinucleotide_hashes();
     std::vector<std::string> reads(reads_arr, reads_arr + n_reads);
+    std::vector<std::string> names;
+    if (read_names != NULL){
+        for (int i{0}; i < n_reads; i++){
+            names.emplace_back(read_names[i]);
+        }
+    }
     std::vector<SketchedSeq*> input_seqs;
-    syncmer::sketch_sequences(opt->s, reads, input_seqs);
+    syncmer::sketch_sequences(opt->s, reads, names, input_seqs);
     std::vector<SketchedSeq*> prev_seqs;
+    // to be used for phasing
+    std::vector<SketchedSeq*> corrected_seqs;
 
     /*************************************************************************
      * Loop until unitigs are all disconnected or max iterations are reached *
@@ -48,42 +60,43 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, int n_reads){
     Graph* curr_graph = new Graph(k_prime);
     while(k_prime <= init_k_prime + opt->max_iterations && (prev_graph == NULL || prev_graph->any_connected_unitigs())){
         if(opt->verbose){
-            std::cout << "\n*****\n" << std::endl;
+            std::cout << "\n*****\nbeginning construction:" << std::endl;
         }
         if (!construct_graph(k_prime, prev_seqs, input_seqs, prev_graph, curr_graph, opt->verbose)){
             return NULL;
         }
         k_prime = curr_graph->get_k_prime();
+        if (k_prime == 3){
+            // deep copy the sequences so they aren't lost later
+            // TODO: maybe just perform correction again but with the final unitigs?
+            for (auto* seq : input_seqs){
+                if (seq->is_read) corrected_seqs.push_back(new SketchedSeq(*seq));
+
+            }
+        }
         if (opt->verbose){
             std::cout << "k' = " << k_prime << std::endl;
             std::cout << input_seqs.size() << " sequences" << std::endl;
             std::cout << curr_graph->num_nodes() << " initial nodes" << std::endl;
             std::cout << curr_graph->num_unitigs() << " initial unitigs" << std::endl;
         }
-        if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || (k_prime - init_k_prime) % 100 == 0 || std::find(std::begin(DEBUG_CHECKPOINTS), std::end(DEBUG_CHECKPOINTS), k_prime) != std::end(DEBUG_CHECKPOINTS))){
+        bool is_checkpoint = check_for_checkpoint(k_prime);
+        if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || is_checkpoint)){
             std::string out_unitigs {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + ".gfa"};
-            //curr_graph->write_hpc_unitigs_to_gfa(out_unitigs, true);
-            dk_graph_t* curr_gfa = curr_graph->convert_to_gfa_representation();
-            char** curr_expanded = dk_expand_sequences(opt, reads_arr, n_reads, curr_gfa->unitigs, curr_gfa->n_unitigs);
-            //free HPC versions of the unitigs
-            for (int i{0}; i < curr_gfa->n_unitigs; i++){
-                delete[] curr_gfa->unitigs[i];
-            }
-            curr_gfa->unitigs = curr_expanded;
-            dk_write_gfa(out_unitigs.c_str(), curr_gfa);
-            dk_graph_free(curr_gfa);
+            std::string out_nodes {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + "_nodes.gfa"};
+            curr_graph->write_hpc_unitigs_to_gfa(out_unitigs, true);
+            curr_graph->write_nodes_to_gfa(out_nodes, true);
+            std::string out_reads {std::string(opt->out_dir) + "/k" + std::to_string(k_prime) + "_reads.fa"};
+            io::write_sequences(input_seqs, out_reads);
         }
-        int times {0};
-        bool check_dinuc {k_prime - init_k_prime > 200};
-        bool graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);
-        while(graph_changed && times < 10){
-            curr_graph->trim_tips();
-            graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);
-            times++;
-        }
+        bool check_dinuc {k_prime - init_k_prime > 100};
+        curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);
+        curr_graph->trim_tips();
         curr_graph->remove_floaters(opt->compact_thresh);
-        if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || (k_prime - init_k_prime) % 100 == 0 || std::find(std::begin(DEBUG_CHECKPOINTS), std::end(DEBUG_CHECKPOINTS), k_prime) != std::end(DEBUG_CHECKPOINTS))){
+        if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || is_checkpoint)){
             std::string out_unitigs_compacted {std::string(opt->out_dir) + "/compacted_k" + std::to_string(k_prime) + ".gfa"};
+            std::string out_hpc {std::string(opt->out_dir) + "/compacted_" + std::to_string(k_prime) + ".hpc.gfa"};
+            curr_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
             dk_graph_t* curr_gfa = curr_graph->convert_to_gfa_representation();
             char** curr_expanded = dk_expand_sequences(opt, reads_arr, n_reads, curr_gfa->unitigs, curr_gfa->n_unitigs);
             //free HPC versions of the unitigs
@@ -97,7 +110,6 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, int n_reads){
         if (opt->verbose){
             std::cout << curr_graph->num_nodes() << " nodes after compaction" << std::endl;
             std::cout << curr_graph->num_unitigs() << " unitigs after compaction" << std::endl;
-            curr_graph->print_unitigs(true, false);
         }
         curr_graph->add_unitigs_to_input(input_seqs, opt->s);
         if (prev_graph != NULL){
@@ -107,10 +119,48 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, int n_reads){
         prev_graph = curr_graph;
         curr_graph = new Graph(k_prime);
     }
+    
+    // this will be filled by next function call
+    std::vector<Unitig*> utg_list;
+    phase::initialize_unitigs_for_tagging(prev_graph, corrected_seqs, utg_list);
+
+    int round {0};
+    while(utg_list.size() > 0){
+        if (!phase::seed_initial_haplotypes(utg_list)){
+            // no more bubbles, remaining unitigs are homozygous
+            for (size_t i{0}; i < utg_list.size(); i++){
+                utg_list[i]->set_assignment(HOM);
+            }
+            break;
+        }
+        //std::string out_hpc {std::string(opt->out_dir) + "/round_" + std::to_string(round) + "_init.gfa"};
+        //prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
+        int it {0};
+        while(phase::reassign_partitions(prev_graph, corrected_seqs) && it < 100){
+            //out_hpc = std::string(opt->out_dir) + "/round_" + std::to_string(round) + "_iter" + std::to_string(it) + ".gfa";
+            //prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
+            if (opt->verbose && it % 10 == 0) std::cout << "Phasing round " << round << ", iteration " << it << std::endl;
+            it++;
+        }
+        phase::remove_tagged_unitigs(utg_list);
+        round++;
+    }
+
+    if (opt->verbose) prev_graph->print_unitigs(true, false);
+
     if (opt->out_dir != NULL){
+        //std::string out_reads {std::string(opt->out_dir) + "/final_reads.fa"};
+        //io::write_sequences(input_seqs, out_reads);//mkl
+
         std::string out_hpc {std::string(opt->out_dir) + "/final_hpc.gfa"};
         prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
+
+        std::vector<std::string> phased_walks;
+        phase::get_haplotype_sequences(prev_graph, phased_walks);
+        std::string out_walks {std::string(opt->out_dir) + "/final_walks.fa"};
+        io::write_walks(phased_walks, out_walks);
     }
+
     dk_graph_t* ret_graph = prev_graph->convert_to_gfa_representation();
     if (opt->return_hpc_utg == 0){
         char** expanded_sequences = dk_expand_sequences(opt, reads_arr, n_reads, ret_graph->unitigs, ret_graph->n_unitigs);
@@ -127,8 +177,8 @@ char** dk_expand_sequences(dk_opt_t* opt, char** reads_arr, int n_reads, char** 
     /*****************************
      * Convert to C++ structures *
      *****************************/
-     std::vector<std::string> hpc_seqs(hpc_seqs_arr, hpc_seqs_arr + n_unitigs);
-     std::vector<std::string> reads(reads_arr, reads_arr + n_reads);
+    std::vector<std::string> hpc_seqs(hpc_seqs_arr, hpc_seqs_arr + n_unitigs);
+    std::vector<std::string> reads(reads_arr, reads_arr + n_reads);
 
     /***************************************
      * Initialize HPC block data structure *
@@ -137,6 +187,7 @@ char** dk_expand_sequences(dk_opt_t* opt, char** reads_arr, int n_reads, char** 
     for (size_t i{0}; i < hpc_seqs.size(); i++){
         hpc_tallies.emplace_back(hpc_seqs[i].size());
     }
+
 
     /**************************
      * Index unitig sequences *
@@ -188,7 +239,7 @@ char** dk_expand_sequences(dk_opt_t* opt, char** reads_arr, int n_reads, char** 
         std::string final_seq {""};
         for (size_t j{0}; j < hpc_tallies[i].len; j++){
             // some positions may not have coverage due to being at the end of a unitig
-            if (hpc_tallies[i].coverages[j] == 0){
+            if (hpc_tallies[i].coverages[j] < 3){
                 if (j == 0){
                     std::cout << "[hpc::expand_sequences] trimming start of unitig " << i << std::endl;
                     continue;
@@ -237,21 +288,52 @@ void dk_graph_free(dk_graph_t* to_free){
 }
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose){
-    std::vector<size_t> remove_list;
+    ankerl::unordered_dense::set<size_t> remove_set;
+    std::vector<SketchedSeq*> corrected_seqs;
+
+    ankerl::unordered_dense::map<uint64_t, int> connection_lifetimes;
+    auto pack_key = [](int a, int b) -> uint64_t{
+        return ((uint64_t)(uint32_t)a << 32) | (uint64_t)(uint32_t)b;
+    };
+
     // check the sequences to see if they should be removed (and also calculate jump length)
-    int lowest_span {-1};
     for (size_t seq_idx {0}; seq_idx < input_sequences.size(); seq_idx++){
-        int curr_span {-1};
-        if (input_sequences[seq_idx]->kmers.size() < k_prime || (prev_graph && input_sequences[seq_idx]->is_read && !prev_graph->check_sequence(input_sequences[seq_idx]->kmers, (size_t)k_prime - 1, curr_span))){
-            remove_list.push_back(seq_idx);
-        }else if (curr_span != -1){
-            // valid sequence
-            if (lowest_span == -1 || curr_span < lowest_span) lowest_span = curr_span;
-            continue;
+        if (input_sequences[seq_idx]->kmers.size() < k_prime){
+            remove_set.insert(seq_idx);
+        }else if (prev_graph != NULL && input_sequences[seq_idx]->is_read){
+            SketchedSeq* corrected_seq = NULL;
+            SketchedSeq* split_seq = NULL;
+            std::vector<ConnectionSpan> connections;
+            bool contained = prev_graph->check_sequence(input_sequences[seq_idx], (size_t)k_prime - 1, connections, corrected_seq, split_seq);
+            if (contained || corrected_seq != NULL){
+                remove_set.insert(seq_idx);
+                if (corrected_seq != NULL){
+                    corrected_seqs.push_back(corrected_seq);
+                }
+            }
+            if (split_seq != NULL){
+                corrected_seqs.push_back(split_seq);
+            }
+            if (remove_set.find(seq_idx) == remove_set.end()){
+                for (auto& conn : connections){
+                    uint64_t key = pack_key(conn.utg_id_a, conn.utg_id_b);
+                    auto it = connection_lifetimes.find(key);
+                    if (it == connection_lifetimes.end()){
+                        connection_lifetimes[key] = conn.span;
+                    }else{
+                        it->second = std::max(it->second, conn.span);
+                    }
+                }
+            }
         }
     }
-
-    // if we're skipping iterations, update k' value for current graph
+    int lowest_span = -1;
+    for (auto& [key, lifetime] : connection_lifetimes){
+        if (lowest_span == -1 || lifetime < lowest_span){
+            lowest_span = lifetime;
+        }
+    }
+        // if we're skipping iterations, update k' value for current graph
     if (lowest_span != -1){
         k_prime += lowest_span - 1;
         dbg->set_k_prime(k_prime);
@@ -260,16 +342,16 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
     if (verbose){
         std::cout << "Lowest span: " << lowest_span << std::endl;
     }
+    for (size_t i{0}; i < corrected_seqs.size(); i++){
+        input_sequences.emplace_back(corrected_seqs[i]);
+    }
     // actually add the sequences now
     for (size_t seq_idx {0}; seq_idx < input_sequences.size(); seq_idx++){
-        //TODO: switch from linear search for index
-        if((std::find(remove_list.begin(), remove_list.end(), seq_idx) == remove_list.end())  && (input_sequences[seq_idx]->kmers.size() < dbg->get_k_prime() || !dbg->add_sequence(*input_sequences[seq_idx], prev_graph))){
-            remove_list.push_back(seq_idx);
+        if((remove_set.find(seq_idx) == remove_set.end())  && (input_sequences[seq_idx]->kmers.size() < dbg->get_k_prime() || !dbg->add_sequence(*input_sequences[seq_idx], prev_graph))){
+            remove_set.insert(seq_idx);
         }
     }
-    std::sort(remove_list.begin(), remove_list.end());
 
-    // free the sequences that were removed from the previous graph
     for (size_t i{0}; i < prev_seqs.size(); i++){
         delete prev_seqs[i];
     }
@@ -277,9 +359,27 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
 
     // remove discarded sequences from the next graph's input
     // cannot delete them just yet because the next graph may need to access their nodes
-    for(int i{(int)remove_list.size() - 1}; i >= 0; i--){
-        prev_seqs.push_back(input_sequences[remove_list[(size_t)i]]);
-        input_sequences.erase(input_sequences.begin() + (long)remove_list[(size_t)i]);
+    std::vector<SketchedSeq*> kept;
+    kept.reserve(input_sequences.size() - remove_set.size());
+    for (size_t i{0}; i < input_sequences.size(); i++){
+        if (remove_set.count(i)){
+            prev_seqs.push_back(input_sequences[i]);
+        }else{
+            kept.push_back(input_sequences[i]);
+        }
     }
+    input_sequences = std::move(kept);
     return true;
+}
+
+bool check_for_checkpoint(int curr_k_prime){
+    int new_idx = DEBUG_IDX;
+    while(curr_k_prime >= DEBUG_CHECKPOINTS[new_idx]){
+        new_idx++;
+    }
+    if (new_idx != DEBUG_IDX){
+        DEBUG_IDX = new_idx;
+        return true;
+    }
+    return false;
 }

@@ -6,9 +6,6 @@
 #include <cassert>
 #include <iostream>
 
-//15 length substrings of "ACACACACACACACACACACACACACACACA", "ATATATATATATATATATATATATATATATA", "CTCTCTCTCTCTCTCTCTCTCTCTCTCTCTC", their reverse complements, etc.
-const ankerl::unordered_dense::set<uint64_t> DINUCLEOTIDE_SUBHASHES = {71582788ULL, 1002159035ULL, 143165576ULL,214748364ULL, 286331153ULL, 501079517ULL, 572662306ULL, 787410670ULL, 858993459ULL, 930576247ULL};
-
 Node::Node(KmerView& set_ksyncmer, Span<uint8_t>& set_flipped, Span<int>& set_unique_len, int set_node, Unitig* set_unitig) : ksyncmer(set_ksyncmer), flip_kmer(set_flipped), unique_seq_len(set_unique_len) {
     this->node_idx = set_node;
     this->utg_ptr = set_unitig;
@@ -76,6 +73,23 @@ bool Node::is_neighbors_with(Node* to_check){
     return false;
 }
 
+uint64_t Node::unique_kmer_from_neigh(Node* neigh, bool& flipped, int& unique_seq_len){
+    for (int i{0}; i < this->neighbors.size(); i++){
+        if (this->neighbors[(size_t)i].neighbor == neigh){
+            if (this->neighbors[(size_t)i].self_orientation == FORWARD_ORIENTATION){
+                flipped = !this->ith_kmer_flipped(0);
+                unique_seq_len = this->ith_unique_seq_len(0);
+                return this->get_front_hash();
+            }
+            flipped = this->ith_kmer_flipped(this->num_kmers() - 1);
+            unique_seq_len = this->ith_unique_seq_len(this->num_kmers() - 2);
+            return this->get_back_hash();
+        }
+    }
+    assert(0);
+    return 0;
+}
+
 int Node::num_kmers(){
     return (int)this->ksyncmer.kmers.size();
 }
@@ -141,6 +155,26 @@ bool Node::neighbors_diff_utg(){
     return false;
 }
 
+Node* Node::get_diff_unitig_neighbor(){
+    if (this->neighbors.size() != 2) return NULL;
+    for (size_t i{0}; i < this->neighbors.size(); i++){
+        if (this->neighbors[i].neighbor->get_unitig() != this->get_unitig()){
+            return this->neighbors[i].neighbor;
+        }
+    }
+    return NULL;
+}
+
+Node* Node::get_parallel_neigh(Unitig* in_utg){
+    if (this->neighbors.size() != 3) return NULL;
+    for (size_t i{0}; i < this->neighbors.size(); i++){
+        if (this->neighbors[i].neighbor->get_unitig() != this->get_unitig() && this->neighbors[i].neighbor->get_unitig() != in_utg){
+            return this->neighbors[i].neighbor;
+        }
+    }
+    return NULL;
+}
+
 int Node::longest_neighbor_utg_length(){
     int longest_length {0};
     for (size_t i{0}; i < neighbors.size(); i++){
@@ -191,20 +225,43 @@ void Node::get_hpc_sequence(std::string& ret_str, bool reverse){
 }
 
 // returns true if a dinucleotide hash is in the first or last kmer of this node
-// checking for substrings of size 15
 bool Node::end_is_dinucleotide(){
-    int last_idx = this->num_kmers() - 1;
-    for (int side : {0, last_idx}){
-        uint64_t hash = this->ksyncmer.kmers[(size_t)side];
-        uint64_t least_sig = (hash >> 2) & ((1ULL << 30) - 1);
-        uint64_t most_sig = hash >> (64 - 30); 
-        for (uint64_t subhash : {least_sig, most_sig}){
-            if (DINUCLEOTIDE_SUBHASHES.contains(subhash)){
-                return true;
-            }
+    assert(this->neighbors_diff_utg());
+    assert(this->num_kmers() > 1);
+    // get dir that would lead to the rest of the unitig
+    char read_dir = INVALID_ORIENTATION;
+    for (size_t i{0}; i < this->neighbors.size(); i++){
+        Node* neigh = this->neighbors[i].neighbor;
+        if (neigh->get_unitig() == this->get_unitig()){
+            read_dir = this->neighbors[i].self_orientation;
+            break;
         }
     }
+    //fails on single-node utgs, which this shouldn't be called on
+    assert(read_dir != INVALID_ORIENTATION);
+    int side = read_dir == FORWARD_ORIENTATION ? 0 : this->num_kmers() - 1;
+    
+    uint64_t hash = this->ksyncmer.kmers[(size_t)side];
+    // get either 6 least significant characters, or 6 most significant characters
+    uint64_t subhash = read_dir == FORWARD_ORIENTATION ? hash >> 52 : (hash >> 2) & 0xFFF;
+    if (DINUCLEOTIDE_SUBHASHES.contains(subhash)){
+        return true;
+    }
     return false;
+}
+
+void Node::print_kmers(){
+    if (this->ksyncmer.flip){
+        for (int i{(int)this->ksyncmer.kmers.size() - 1}; i >= 0 ; i--){
+            std::cout << this->ksyncmer.kmers[(size_t)i] << std::endl;
+        }
+    }else{
+        for (size_t i{0}; i < this->ksyncmer.kmers.size(); i++){
+            std::string res;
+            hash::hash_to_kmer(this->ith_kmer((int)i), this->ith_kmer_flipped((int)i), res);
+            std::cout << "(" << i << ") " << this->ksyncmer.kmers[(size_t)i] << " " << res << " " << this->ith_unique_seq_len((size_t)i) << std::endl;
+        }
+    }
 }
 
 void Node::print(bool verbose){

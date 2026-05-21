@@ -71,11 +71,12 @@ int dk_set_opt(const char* preset, dk_opt_t* opt);
  * 
  * @param opt           assembly parameters
  * @param reads_arr     original input read sequences
+ * @param read_names    names corresponding to the reads in reads_arr (optional and can be set to NULL)
  * @param n_reads       number of reads in reads_arr
  * 
  * @return              final assembly graph represented as a list of unitigs and a list of edges
  */
-dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, int n_reads);
+dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names, int n_reads);
 
 /**
  * Performs homopolymer expansion on compressed unitigs
@@ -103,6 +104,11 @@ void dk_write_gfa(const char* file_path, dk_graph_t* graph);
  * @param to_free       graph to be freed
  */
 void dk_graph_free(dk_graph_t* to_free);
+
+/*
+ * Helper function for debugging/checkpointing
+ */
+bool check_for_checkpoint(int curr_k_prime);
 
 #ifdef __cplusplus
 }
