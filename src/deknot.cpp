@@ -10,7 +10,7 @@
 #include <fstream>
 #include <string>
 
-const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500, 1550};
+const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 150, 200, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 230, 240, 250, 300, 350, 360, 370, 380, 390, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500, 1550};
 int DEBUG_IDX = 0;
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
@@ -24,6 +24,7 @@ void dk_opt_init(dk_opt_t* opt){
     opt->return_hpc_utg = 0;
     opt->out_dir = NULL;
     opt->verbose = 0;
+    opt->check_strand = 1;
 }
 
 int dk_set_opt(const char* preset, dk_opt_t* opt){
@@ -83,18 +84,18 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         bool is_checkpoint = check_for_checkpoint(k_prime);
         if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || is_checkpoint)){
             std::string out_unitigs {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + ".gfa"};
-            std::string out_nodes {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + "_nodes.gfa"};
+            //std::string out_nodes {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + "_nodes.gfa"};
             curr_graph->write_hpc_unitigs_to_gfa(out_unitigs, true);
-            curr_graph->write_nodes_to_gfa(out_nodes, true);
+            //curr_graph->write_nodes_to_gfa(out_nodes, true);
             std::string out_reads {std::string(opt->out_dir) + "/k" + std::to_string(k_prime) + "_reads.fa"};
             io::write_sequences(input_seqs, out_reads);
         }
         int times {0};
-        bool check_dinuc {k_prime - init_k_prime > 100};
-        bool graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);
-        while(graph_changed && times < 10){
+        bool check_dinuc {k_prime - init_k_prime > 150};
+        bool graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc, (bool)opt->check_strand);
+        while(graph_changed && times < 3){
             curr_graph->trim_tips();
-            graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);
+            graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc, (bool)opt->check_strand);
             times++;
         }
         curr_graph->remove_floaters(opt->compact_thresh);

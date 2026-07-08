@@ -11,6 +11,8 @@ Unitig::Unitig(std::vector<Node*>& set_nodes, int index){
     this->index = index;
     this->base_freq = 0;
     this->update_median_freq();
+    this->min_minority_count = -1;
+    this->min_minority_supp = -1;
     this->hap1_count = 0;
     this->hap2_count = 0;
     this->assignment = UNASSIGNED;
@@ -126,12 +128,32 @@ Node* Unitig::pop_back(){
     return to_return;
 }
 
+float Unitig::get_median_freq(){
+    return this->median_freq + this->base_freq;
+}
+
 float Unitig::get_base_freq(){
     return this->base_freq;
 }
 
-float Unitig::get_median_freq(){
-    return this->median_freq + this->base_freq;
+int Unitig::min_minority_strand_count(int& support){
+    if (this->min_minority_count != -1){
+        support = this->min_minority_supp;
+        return this->min_minority_count;
+    }
+    int min {this->nodes[0]->minority_strand_count()};
+    int supp {this->nodes[0]->get_count()};
+    for (size_t i{1}; i < this->nodes.size(); i++){
+        int curr_min = this->nodes[i]->minority_strand_count();
+        if (curr_min < min){
+            min = curr_min;
+            supp = this->nodes[i]->get_count();
+        }
+    }
+    this->min_minority_count = min;
+    this->min_minority_supp = supp;
+    support = supp;
+    return min;
 }
 
 bool Unitig::self_connected(){

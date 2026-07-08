@@ -25,6 +25,8 @@ typedef struct {
     const char* out_dir;
     // non-zero value to print logging statements
     int verbose;
+    // (bool) whether errors should be dropped based on strand evidence (e.g., ONT)
+    int check_strand;
 } dk_opt_t;
 
 /*********************************

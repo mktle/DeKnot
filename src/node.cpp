@@ -110,6 +110,18 @@ int Node::get_count(){
     return this->count;
 }
 
+void Node::add_strand_obs(bool flipped, int inc){
+    this->strand_counts[flipped ? 1 : 0] += inc;
+}
+
+int Node::get_strand_count(bool flipped){
+    return this->strand_counts[flipped ? 1 : 0];
+}
+
+int Node::minority_strand_count(){
+    return std::min(this->strand_counts[0], this->strand_counts[1]);
+}
+
 uint64_t Node::ith_kmer(int i){
     if (this->ksyncmer.flip){
         return this->ksyncmer.kmers[this->ksyncmer.kmers.size() - 1 - (size_t)i];

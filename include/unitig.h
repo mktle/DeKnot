@@ -34,6 +34,7 @@ class Unitig{
 
         float get_median_freq();
         float get_base_freq();
+        int min_minority_strand_count(int& support);
         bool self_connected();
         void update_median_freq();
         void set_base_freq(float set_freq);
@@ -49,6 +50,7 @@ class Unitig{
         float get_hap_frac(int id);
         void set_hap_flipped(bool set);
         bool get_hap_flipped();
+
 
         void set_parallel_utg();
         Unitig* get_parallel_utg();
@@ -73,6 +75,9 @@ class Unitig{
         int index;
         float median_freq;
         float base_freq;
+        // min minority strand count (for ONT errors)
+        int min_minority_count;
+        int min_minority_supp;
         /***************
          * For phasing *
          ***************/

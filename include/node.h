@@ -36,6 +36,9 @@ class Node{
         int num_kmers();
         int get_node_id();
         int get_count();
+        void add_strand_obs(bool flipped, int inc);
+        int get_strand_count(bool flipped);
+        int minority_strand_count();
         uint64_t ith_kmer(int i);
         bool ith_kmer_flipped(int i);
         int ith_unique_seq_len(int i);
@@ -64,6 +67,8 @@ class Node{
 
         // frequency of this node
         int count;
+        // strand counts for ONT error correction
+        int strand_counts[2] = {0, 0};
 
         int node_idx;
         Unitig* utg_ptr;

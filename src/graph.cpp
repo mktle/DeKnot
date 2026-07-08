@@ -555,6 +555,7 @@ void Graph::increment_k_min_mer_count(int increment, bool is_read, KmerView& k_s
 
         this->add_node_to_lookup_table(new_node);
         new_node->set_count(increment);
+        node_ptr = new_node;
     }else{
         if (is_read){
             // have already encountered this k_min_mer, so we just need to increment count
@@ -564,6 +565,9 @@ void Graph::increment_k_min_mer_count(int increment, bool is_read, KmerView& k_s
             // use max to avoid double-counting
             node_ptr->set_count(std::max(node_ptr->get_count(), increment));
         }
+    }
+    if(is_read){
+        node_ptr->add_strand_obs(k_syncmer.flip, increment);
     }
 }
 
@@ -725,7 +729,7 @@ void Graph::remove_floaters(int threshold){
     }
 }
 
-bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc){
+bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc, bool check_strand){
     // we will start by merging from longer unitigs
     // so first sort the unitigs by length
     // make sure the median frequency is updated for each unitig
@@ -747,13 +751,13 @@ bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc){
         assert(curr_utg->num_nodes() > 0);
         float current_thresh {2};
         while (current_thresh <= threshold){
-            bool compacted_front = this->trim_low_freq_end(curr_utg->get_front(), current_thresh, sorted_unitigs, check_dinuc);
+            bool compacted_front = this->trim_low_freq_end(curr_utg->get_front(), current_thresh, sorted_unitigs, check_dinuc, check_strand);
             bool compacted_back;
             if (curr_utg->get_front() == curr_utg->get_back()){
                 // only need to handle one side for single node unitigs
                 compacted_back = compacted_front;
             }else{
-                compacted_back = this->trim_low_freq_end(curr_utg->get_back(), current_thresh, sorted_unitigs, check_dinuc);
+                compacted_back = this->trim_low_freq_end(curr_utg->get_back(), current_thresh, sorted_unitigs, check_dinuc, check_strand);
             }
             if (check_dinuc && !(compacted_front || compacted_back)){
                 if(check_cross_pattern(curr_utg)){
@@ -775,7 +779,7 @@ bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc){
     return graph_changed;
 }
 
-bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>& sorted_list, bool check_dinuc){
+bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>& sorted_list, bool check_dinuc, bool check_strand){
     Unitig* curr_utg = node_end->get_unitig();
     const std::vector<Edge> neighbors = node_end->view_neighbors();
     float lowest_freq {-1};
@@ -785,7 +789,8 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
         Node* neigh_node = neighbors[i].neighbor;
         Unitig* neigh_utg = neigh_node->get_unitig();
         if (neigh_utg != curr_utg){
-            if (neigh_utg->get_median_freq() < thresh){
+            int min_strand_support;
+            if (neigh_utg->get_median_freq() < thresh || (check_strand && neigh_utg->min_minority_strand_count(min_strand_support) < 2 && min_strand_support >= 4)){
                 this->drop_unitig(sorted_list, node_end, neigh_utg);
                 return true;
             }else{
@@ -808,20 +813,26 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
     return false;
 }
 
+// TODO: needs to be directional
 bool Graph::dinuc_topology(Node* curr_end, Unitig* dropped_utg){
     if (curr_end->get_unitig()->self_connected()) return false;
-    // ask ourselves if we can get to the dropped_utg's other neighbor without going through the curr_utg's neighbors
+    // ask ourselves if we can get to the curr_utg's other neighbor without 
     // if so, this is likely a dinucleotide error and not a real variant
     Unitig* curr_utg = curr_end->get_unitig();
     const std::vector<Edge> neighbors = curr_end->view_neighbors();
     ankerl::unordered_dense::set<Node*> seen_nodes;
     seen_nodes.insert(curr_end);
+    seen_nodes.insert(dropped_utg->get_front());
+    seen_nodes.insert(dropped_utg->get_back());
+    ankerl::unordered_dense::set<Unitig*> targets;
     for (size_t i{0}; i < neighbors.size(); i++){
         Node* neigh_node = neighbors[i].neighbor;
         Unitig* neigh_utg = neigh_node->get_unitig();
         if (neigh_utg != dropped_utg && neigh_utg != curr_utg){
-            seen_nodes.insert(neigh_node);
-            seen_nodes.insert(neigh_utg->opposite_end(neigh_node));
+            if (neigh_node->num_neighbors() != 2) return false;
+            targets.insert(neigh_utg);
+        }else if (neigh_utg == dropped_utg){
+            if (neigh_node->num_neighbors() != 2) return false;
         }
     }
     // perform a graph search for maximum of 15 iterations
@@ -847,7 +858,7 @@ bool Graph::dinuc_topology(Node* curr_end, Unitig* dropped_utg){
             Node* neigh_node = curr_neighbors[i].neighbor;
             Unitig* neigh_utg = neigh_node->get_unitig();
             if (curr_node->get_unitig() != neigh_utg){
-                if (neigh_utg == dropped_utg){
+                if (targets.contains(neigh_utg)){
                     return true;
                 }
                 if (seen_nodes.find(neigh_node) == seen_nodes.end()){
@@ -920,7 +931,7 @@ bool Graph::disconnect_unitig_end(Node* remove_node, Unitig* keep_utg, std::vect
             if (neigh_node->num_edges_in_dir(dropped_dir) == 1){
                 // get the neighbor's neighbor with the right edge
                 for (size_t j{0}; j < neigh_neighbors.size(); j++){
-                    if (neigh_neighbors[j].self_orientation == dropped_dir && neigh_neighbors[j].neighbor->get_unitig() != neigh_utg && neigh_neighbors[j].neighbor->num_edges_in_dir(utils::reverse_orientation(neigh_neighbors[j].neighbor_orientation)) == 1){
+                    if (neigh_neighbors[j].self_orientation == dropped_dir && neigh_neighbors[j].neighbor->get_unitig() != neigh_utg && neigh_neighbors[j].neighbor->get_unitig() != remove_utg && neigh_neighbors[j].neighbor->num_edges_in_dir(utils::reverse_orientation(neigh_neighbors[j].neighbor_orientation)) == 1){
                         // need to ensure we don't discard the unitig from the highest level loop (in trim_low_freq_unitigs)
                         Node* donor;
                         Node* recipient;
@@ -1024,7 +1035,9 @@ void Graph::write_nodes_to_gfa(std::string& file_name, bool verbose){
             }else{
                 out_file << "A";
             }
-            out_file << "\tMF:i:" << this->node_list[i]->get_count() << '\n';
+            out_file << "\tMF:i:" << this->node_list[i]->get_count();
+            out_file << "\tFC:i:" << this->node_list[i]->get_strand_count(false);
+            out_file << "\tRC:i:" << this->node_list[i]->get_strand_count(true) << '\n';
 
             const std::vector<Edge> neighs = this->node_list[i]->view_neighbors();
             for (size_t j{0}; j < neighs.size(); j++){
@@ -1053,6 +1066,10 @@ void Graph::write_hpc_unitigs_to_gfa(std::string& file_name, bool verbose){
                 out_file << "*\tLN:i:" << utg_seqs[i].size();
             }
             out_file << "\tMF:i:" << std::round(curr_utg->get_median_freq());
+            int supp;
+            out_file << "\tMC:i:" << curr_utg->min_minority_strand_count(supp);
+            out_file << "\tMS:i:" << supp;
+
             out_file << "\tHA:i:" << curr_utg->get_assignment();
             out_file << "\tH1:i:" << curr_utg->get_hap_count(HAP1);
             out_file << "\tH2:i:" << curr_utg->get_hap_count(HAP2) << '\n';
