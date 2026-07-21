@@ -111,7 +111,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             std::cout << curr_graph->num_nodes() << " nodes after compaction" << std::endl;
             std::cout << curr_graph->num_unitigs() << " unitigs after compaction" << std::endl;
         }
-        if(curr_graph->has_tip()) break;
+        if(k_prime > 300 && curr_graph->has_tip()) break;
         curr_graph->add_unitigs_to_input(input_seqs, opt->s);
         if (prev_graph != NULL){
             delete prev_graph;
@@ -120,6 +120,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         prev_graph = curr_graph;
         curr_graph = new Graph(k_prime);
     }
+    std::cout << "breaking" << std::endl;//mkl
     prev_graph->trim_tips();
     
     // this will be filled by next function call
