@@ -90,14 +90,8 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             std::string out_reads {std::string(opt->out_dir) + "/k" + std::to_string(k_prime) + "_reads.fa"};
             io::write_sequences(input_seqs, out_reads);
         }
-        int times {0};
         bool check_dinuc {k_prime - init_k_prime > 150};
-        bool graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc, (bool)opt->check_strand);
-        while(graph_changed && times < 3){
-            curr_graph->trim_tips();
-            graph_changed = curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc, (bool)opt->check_strand);
-            times++;
-        }
+        curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc, (bool)opt->check_strand);
         curr_graph->remove_floaters(opt->compact_thresh);
         if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || is_checkpoint)){
             std::string out_unitigs_compacted {std::string(opt->out_dir) + "/compacted_k" + std::to_string(k_prime) + ".gfa"};
@@ -117,6 +111,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             std::cout << curr_graph->num_nodes() << " nodes after compaction" << std::endl;
             std::cout << curr_graph->num_unitigs() << " unitigs after compaction" << std::endl;
         }
+        if(curr_graph->has_tip()) break;
         curr_graph->add_unitigs_to_input(input_seqs, opt->s);
         if (prev_graph != NULL){
             delete prev_graph;
@@ -125,6 +120,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         prev_graph = curr_graph;
         curr_graph = new Graph(k_prime);
     }
+    prev_graph->trim_tips();
     
     // this will be filled by next function call
     std::vector<Unitig*> utg_list;
@@ -151,15 +147,16 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         phase::remove_tagged_unitigs(utg_list);
         round++;
     }
-
     if (opt->verbose) prev_graph->print_unitigs(true, false);
-
     if (opt->out_dir != NULL){
         //std::string out_reads {std::string(opt->out_dir) + "/final_reads.fa"};
         //io::write_sequences(input_seqs, out_reads);//mkl
 
         std::string out_hpc {std::string(opt->out_dir) + "/final_hpc.gfa"};
         prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
+
+        std::string out_broken {std::string(opt->out_dir) + "/broken_hpc.gfa"};
+        curr_graph->write_hpc_unitigs_to_gfa(out_broken, true);
 
         std::vector<std::string> phased_walks;
         phase::get_haplotype_sequences(prev_graph, phased_walks);

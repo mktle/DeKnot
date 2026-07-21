@@ -83,6 +83,9 @@ class Graph {
         void reset_haplotypes();
         void update_median_coverage();
         float get_median_coverage();
+        bool has_tip();
+        bool aligned_reads();
+        void align_reads_to_unitigs(std::vector<SketchedSeq*>& reads);
 
         void print_nodes(bool verbose);
         void print_unitigs(bool verbose, bool print_seq);
@@ -94,6 +97,7 @@ class Graph {
         dk_graph_t* convert_to_gfa_representation();
 
     private: 
+        bool saved_alns;
         float median_coverage;
         int k_prime;
         std::vector<Node*> node_list;

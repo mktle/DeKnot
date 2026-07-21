@@ -15,6 +15,7 @@
 Graph::Graph(int set_k_prime){
     assert(this->node_table.size() == 0);
     this->k_prime = set_k_prime;
+    this->saved_alns = false;
 }
 
 Graph::~Graph(){
@@ -1168,6 +1169,48 @@ void Graph::update_median_coverage(){
 
 float Graph::get_median_coverage(){
     return this->median_coverage;
+}
+
+bool Graph::has_tip(){
+    for (size_t i{0}; i < this->unitig_list.size(); i++){
+        Unitig* utg = this->unitig_list[i];
+        if (utg != NULL){
+            Node* adj_node;
+            Node* inner_end = utg->get_tip_inner_end(adj_node);
+            if (inner_end != NULL) return true;
+        }
+    }
+    return false;
+}
+
+bool Graph::aligned_reads(){
+    return this->saved_alns;
+}
+
+void Graph::align_reads_to_unitigs(std::vector<SketchedSeq*>& reads){
+    for (size_t i{0}; i < reads.size(); i++){
+        if (reads[i]->is_read && reads[i]->kmers.size() >= (size_t)this->get_k_prime()){
+            ankerl::unordered_dense::set<Unitig*> alned_to;
+            Unitig* track_utg {NULL};
+            
+            size_t check_thresh = reads[i]->kmers.size() - (size_t)this->get_k_prime() + 1;
+            for (size_t j{0}; j < check_thresh; j++){
+                Span<uint64_t> curr_kmers(reads[i]->kmers.data() + j, (size_t)this->get_k_prime());
+                char curr_orient = syncmer::canonical_syncmer(curr_kmers);
+                KmerView curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION};
+                Node* curr_node = this->get_node_from_lookup_table(curr_canon);
+                if (curr_node != NULL && track_utg != curr_node->get_unitig()){
+                    alned_to.insert(curr_node->get_unitig());
+                    track_utg = curr_node->get_unitig();
+                }
+            }
+            // now add read record to all unitigs
+            for (const auto& aln_utg : alned_to) {
+                aln_utg->add_read(reads[i]);
+            }
+        }
+    }
+    this->saved_alns = true;
 }
 
 void Graph::print_nodes(bool verbose){

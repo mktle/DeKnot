@@ -5,31 +5,7 @@
 
 void phase::initialize_unitigs_for_tagging(Graph* graph, std::vector<SketchedSeq*>& reads, std::vector<Unitig*>& sorted_unitigs){
     graph->update_median_coverage();
-    /************************
-     * Map reads to unitigs *
-     ************************/
-    for (size_t i{0}; i < reads.size(); i++){
-        if (reads[i]->is_read && reads[i]->kmers.size() >= (size_t)graph->get_k_prime()){
-            ankerl::unordered_dense::set<Unitig*> alned_to;
-            Unitig* track_utg {NULL};
-            
-            size_t check_thresh = reads[i]->kmers.size() - (size_t)graph->get_k_prime() + 1;
-            for (size_t j{0}; j < check_thresh; j++){
-                Span<uint64_t> curr_kmers(reads[i]->kmers.data() + j, (size_t)graph->get_k_prime());
-                char curr_orient = syncmer::canonical_syncmer(curr_kmers);
-                KmerView curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION};
-                Node* curr_node = graph->get_node_from_lookup_table(curr_canon);
-                if (curr_node != NULL && track_utg != curr_node->get_unitig()){
-                    alned_to.insert(curr_node->get_unitig());
-                    track_utg = curr_node->get_unitig();
-                }
-            }
-            // now add read record to all unitigs
-            for (const auto& aln_utg : alned_to) {
-                aln_utg->add_read(reads[i]);
-            }
-        }
-    }
+    if (!graph->aligned_reads()) graph->align_reads_to_unitigs(reads);
     const std::vector<Unitig*> unitig_list = graph->view_unitigs();
     for (size_t i{0}; i < unitig_list.size(); i++){
         Unitig* utg = unitig_list[i];
