@@ -1177,7 +1177,10 @@ bool Graph::has_tip(){
         if (utg != NULL){
             Node* adj_node;
             Node* inner_end = utg->get_tip_inner_end(adj_node);
-            if (inner_end != NULL) return true;
+            if (inner_end != NULL){
+                std::cout << "found a tip in " << utg->get_id() << std::endl;//mkl
+                return true;
+            }
         }
     }
     return false;

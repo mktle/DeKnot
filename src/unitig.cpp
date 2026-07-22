@@ -208,12 +208,25 @@ Node* Unitig::get_tip_inner_end(Node*& adj_node){
         if (this->get_back()->num_neighbors() == 2 || (this->get_front() == this->get_back() && this->get_back()->num_neighbors() == 1)){
             const std::vector<Edge>& neighbors = this->get_back()->view_neighbors();
             for (size_t i{0}; i < neighbors.size(); i++){
+                Node* neigh = neighbors[i].neighbor;
                 // get the neighbor on the different unitig
-                if (neighbors[i].neighbor->get_unitig() != this){
-                    assert(neighbors[i].neighbor->num_edges_in_dir(utils::reverse_orientation(neighbors[i].neighbor_orientation)) > 0);
-                    if (neighbors[i].neighbor->num_edges_in_dir(utils::reverse_orientation(neighbors[i].neighbor_orientation)) > 1){
-                        adj_node = neighbors[i].neighbor;
-                        return this->get_back();
+                if (neigh->get_unitig() != this){
+                    assert(neigh->num_edges_in_dir(utils::reverse_orientation(neighbors[i].neighbor_orientation)) > 0);
+                    if (neigh->num_edges_in_dir(utils::reverse_orientation(neighbors[i].neighbor_orientation)) > 1){
+                        // check if parallel utg continues with more neighbors
+                        // so first get the parallel utg
+                        const std::vector<Edge>& neigh_neighbors = neigh->view_neighbors();
+                        for (size_t j{0}; j < neigh_neighbors.size(); j++){
+                            Node* neigh_neigh = neigh_neighbors[j].neighbor;
+                            Unitig* nn_utg = neigh_neigh->get_unitig();
+                            if (nn_utg != this && nn_utg != neigh->get_unitig()){
+                                if (nn_utg->opposite_end(neigh_neigh)->num_neighbors() > 1){
+                                    adj_node = neigh;
+                                    return this->get_back();
+                                }
+
+                            }
+                        }
                     }
                 }
             }
@@ -223,12 +236,24 @@ Node* Unitig::get_tip_inner_end(Node*& adj_node){
         if (this->get_front()->num_neighbors() == 2){
             const std::vector<Edge>& neighbors = this->get_front()->view_neighbors();
             for (size_t i{0}; i < neighbors.size(); i++){
+                Node* neigh = neighbors[i].neighbor;
                 // get the neighbor on the different unitig
-                if (neighbors[i].neighbor->get_unitig() != this){
-                    assert(neighbors[i].neighbor->num_edges_in_dir(utils::reverse_orientation(neighbors[i].neighbor_orientation)) > 0);
-                    if (neighbors[i].neighbor->num_edges_in_dir(utils::reverse_orientation(neighbors[i].neighbor_orientation)) > 1){
-                        adj_node = neighbors[i].neighbor;
-                        return this->get_front();
+                if (neigh->get_unitig() != this){
+                    assert(neigh->num_edges_in_dir(utils::reverse_orientation(neighbors[i].neighbor_orientation)) > 0);
+                    if (neigh->num_edges_in_dir(utils::reverse_orientation(neighbors[i].neighbor_orientation)) > 1){
+                        // check if parallel utg continues with more neighbors
+                        // so first get the parallel utg
+                        const std::vector<Edge>& neigh_neighbors = neigh->view_neighbors();
+                        for (size_t j{0}; j < neigh_neighbors.size(); j++){
+                            Node* neigh_neigh = neigh_neighbors[j].neighbor;
+                            Unitig* nn_utg = neigh_neigh->get_unitig();
+                            if (nn_utg != this && nn_utg != neigh->get_unitig()){
+                                if (nn_utg->opposite_end(neigh_neigh)->num_neighbors() > 1){
+                                    adj_node = neigh;
+                                    return this->get_front();
+                                }
+                            }
+                        }
                     }
                 }
             }

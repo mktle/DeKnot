@@ -10,7 +10,7 @@
 #include <fstream>
 #include <string>
 
-const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 150, 200, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 230, 240, 250, 300, 350, 360, 370, 380, 390, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500, 1550};
+const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500, 1550};
 int DEBUG_IDX = 0;
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
@@ -19,12 +19,12 @@ void dk_opt_init(dk_opt_t* opt){
     memset(opt, 0, sizeof(dk_opt_t));
     opt->s = 9;
     opt->init_k_prime = 2;
-    opt->max_iterations = 1000;
+    opt->max_iterations = 2000;
     opt->compact_thresh = 4;
     opt->return_hpc_utg = 0;
     opt->out_dir = NULL;
     opt->verbose = 0;
-    opt->check_strand = 1;
+    opt->check_strand = 0;
 }
 
 int dk_set_opt(const char* preset, dk_opt_t* opt){
@@ -94,24 +94,18 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc, (bool)opt->check_strand);
         curr_graph->remove_floaters(opt->compact_thresh);
         if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || is_checkpoint)){
-            std::string out_unitigs_compacted {std::string(opt->out_dir) + "/compacted_k" + std::to_string(k_prime) + ".gfa"};
             std::string out_hpc {std::string(opt->out_dir) + "/compacted_" + std::to_string(k_prime) + ".hpc.gfa"};
             curr_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
-            dk_graph_t* curr_gfa = curr_graph->convert_to_gfa_representation();
-            char** curr_expanded = dk_expand_sequences(opt, reads_arr, n_reads, curr_gfa->unitigs, curr_gfa->n_unitigs);
-            //free HPC versions of the unitigs
-            for (int i{0}; i < curr_gfa->n_unitigs; i++){
-                delete[] curr_gfa->unitigs[i];
-            }
-            curr_gfa->unitigs = curr_expanded;
-            dk_write_gfa(out_unitigs_compacted.c_str(), curr_gfa);
-            dk_graph_free(curr_gfa);
         }
         if (opt->verbose){
             std::cout << curr_graph->num_nodes() << " nodes after compaction" << std::endl;
             std::cout << curr_graph->num_unitigs() << " unitigs after compaction" << std::endl;
         }
-        if(k_prime > 300 && curr_graph->has_tip()) break;
+        if(k_prime <= 300){
+            curr_graph->trim_tips();
+        }else if(curr_graph->has_tip()){
+            break;
+        }
         curr_graph->add_unitigs_to_input(input_seqs, opt->s);
         if (prev_graph != NULL){
             delete prev_graph;
@@ -120,7 +114,6 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         prev_graph = curr_graph;
         curr_graph = new Graph(k_prime);
     }
-    std::cout << "breaking" << std::endl;//mkl
     prev_graph->trim_tips();
     
     // this will be filled by next function call
