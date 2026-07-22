@@ -49,9 +49,21 @@ int Graph::num_unitigs(){
     return (int)this->unitig_list.size() - (int)this->unitig_free_list.size();
 }
 
+int Graph::min_connect_size(){
+    int min = std::numeric_limits<int>::max();
+    for (size_t i{0}; i < this->unitig_list.size(); i++){
+        Unitig* utg = this->unitig_list[i];
+        if (utg != NULL && utg->num_nodes() < min){
+            min = utg->num_nodes();
+        }
+    }
+    if (min == std::numeric_limits<int>::max()) return 1;
+    return min;
+}
+
 //  run *after* graph is completed (i.e., in the next iteration)
 // check if the sequence is completely contained in a unitig from this previous iteration
-bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, std::vector<ConnectionSpan>& connections, SketchedSeq*& corrected_seq, SketchedSeq*& split_seq){
+bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, SketchedSeq*& corrected_seq, SketchedSeq*& split_seq){
     struct Segment {int utg_id; int span;};
     std::vector<Segment> segments;
     std::vector<DroppedBlock> to_correct;
@@ -157,16 +169,6 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, std::vec
         corrected_seq = NULL;
     }
 
-    connections.clear();
-    if (orig_seq->is_read){
-        for (size_t j = 1; j < segments.size(); j++){
-            if (segments[j-1].utg_id != segments[j].utg_id){
-                int a = std::min(segments[j-1].utg_id, segments[j].utg_id);
-                int b = std::max(segments[j-1].utg_id, segments[j].utg_id);
-                connections.push_back({a, b, std::min(segments[j-1].span, segments[j].span)});
-            }
-        }
-    }
     // dropped portion but could not correct... if this happens too many times, remove
     if (to_correct.size() == 0 && first_drop_end != -1){
         orig_seq->num_tried++;

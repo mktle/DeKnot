@@ -10,7 +10,7 @@
 #include <fstream>
 #include <string>
 
-const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500, 1550};
+const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500, 1550, 1600, 1650, 1700, 1750, 1800, 1850, 1900, 1950};
 int DEBUG_IDX = 0;
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
@@ -287,12 +287,6 @@ void dk_graph_free(dk_graph_t* to_free){
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose){
     ankerl::unordered_dense::set<size_t> remove_set;
     std::vector<SketchedSeq*> corrected_seqs;
-
-    ankerl::unordered_dense::map<uint64_t, int> connection_lifetimes;
-    auto pack_key = [](int a, int b) -> uint64_t{
-        return ((uint64_t)(uint32_t)a << 32) | (uint64_t)(uint32_t)b;
-    };
-
     // check the sequences to see if they should be removed (and also calculate jump length)
     for (size_t seq_idx {0}; seq_idx < input_sequences.size(); seq_idx++){
         if (input_sequences[seq_idx]->kmers.size() < k_prime){
@@ -300,8 +294,7 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
         }else if (prev_graph != NULL && input_sequences[seq_idx]->is_read){
             SketchedSeq* corrected_seq = NULL;
             SketchedSeq* split_seq = NULL;
-            std::vector<ConnectionSpan> connections;
-            bool contained = prev_graph->check_sequence(input_sequences[seq_idx], (size_t)k_prime - 1, connections, corrected_seq, split_seq);
+            bool contained = prev_graph->check_sequence(input_sequences[seq_idx], (size_t)k_prime - 1, corrected_seq, split_seq);
             if (contained || corrected_seq != NULL){
                 remove_set.insert(seq_idx);
                 if (corrected_seq != NULL){
@@ -311,34 +304,14 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
             if (split_seq != NULL){
                 corrected_seqs.push_back(split_seq);
             }
-            if (remove_set.find(seq_idx) == remove_set.end()){
-                for (auto& conn : connections){
-                    uint64_t key = pack_key(conn.utg_id_a, conn.utg_id_b);
-                    auto it = connection_lifetimes.find(key);
-                    if (it == connection_lifetimes.end()){
-                        connection_lifetimes[key] = conn.span;
-                    }else{
-                        it->second = std::max(it->second, conn.span);
-                    }
-                }
-            }
         }
     }
-    int lowest_span = -1;
-    for (auto& [key, lifetime] : connection_lifetimes){
-        if (lowest_span == -1 || lifetime < lowest_span){
-            lowest_span = lifetime;
-        }
+    // if we're skipping iterations, update k' value for current graph
+    if(prev_graph != NULL){
+        k_prime += std::max(prev_graph->min_connect_size() - 2, 0);
     }
-        // if we're skipping iterations, update k' value for current graph
-    if (lowest_span != -1){
-        k_prime += lowest_span - 1;
-        dbg->set_k_prime(k_prime);
-    }
+    dbg->set_k_prime(k_prime);
 
-    if (verbose){
-        std::cout << "Lowest span: " << lowest_span << std::endl;
-    }
     for (size_t i{0}; i < corrected_seqs.size(); i++){
         input_sequences.emplace_back(corrected_seqs[i]);
     }

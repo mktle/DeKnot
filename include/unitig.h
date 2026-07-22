@@ -36,6 +36,7 @@ class Unitig{
         float get_base_freq();
         int min_minority_strand_count(int& support);
         bool self_connected();
+        bool connects_bubbles();
         void update_median_freq();
         void set_base_freq(float set_freq);
         bool is_floating();
@@ -50,7 +51,6 @@ class Unitig{
         float get_hap_frac(int id);
         void set_hap_flipped(bool set);
         bool get_hap_flipped();
-
 
         void set_parallel_utg();
         Unitig* get_parallel_utg();

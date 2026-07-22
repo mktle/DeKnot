@@ -176,6 +176,10 @@ bool Unitig::self_connected(){
     return false;
 }
 
+bool Unitig::connects_bubbles(){
+    return (this->get_front() != this->get_back() && this->get_front()->num_neighbors() > 2 && this->get_back()->num_neighbors() > 2);
+}
+
 void Unitig::update_median_freq(){
     std::vector<int> counts;
     for (size_t i{0}; i < this->num_nodes(); i++){
