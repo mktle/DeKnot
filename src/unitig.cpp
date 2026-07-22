@@ -2,6 +2,7 @@
 #include "unitig.h"
 #include "utils.h"
 
+#include <algorithm>
 #include <cassert>
 #include <iostream>
 
@@ -182,16 +183,19 @@ bool Unitig::connects_bubbles(){
 
 void Unitig::update_median_freq(){
     std::vector<int> counts;
+    counts.reserve(this->nodes.size());
     for (size_t i{0}; i < this->num_nodes(); i++){
-        int val {this->nodes[i]->get_count()};
-        auto pos = std::lower_bound(counts.begin(), counts.end(), val);
-        counts.insert(pos, val);
+        counts.push_back(this->nodes[i]->get_count());
     }
     assert(counts.size() > 0);
+    std::ptrdiff_t mid = (std::ptrdiff_t)(counts.size() / 2);
+    std::nth_element(counts.begin(), counts.begin() + mid, counts.end());
     if (counts.size() % 2 == 0){
-        this->median_freq = (float)(counts[counts.size() / 2] + counts[counts.size() / 2 - 1]) / (float)2.0;
+        int upper = counts[(size_t)mid];
+        int lower = *std::max_element(counts.begin(), counts.begin() + mid);
+        this->median_freq = (float)(upper + lower) / (float)2.0;
     }else{
-        this->median_freq = (float)counts[counts.size() / 2];
+        this->median_freq = (float)counts[(size_t)mid];
     }
 }
 
@@ -223,7 +227,7 @@ Node* Unitig::get_tip_inner_end(Node*& adj_node){
                         for (size_t j{0}; j < neigh_neighbors.size(); j++){
                             Node* neigh_neigh = neigh_neighbors[j].neighbor;
                             Unitig* nn_utg = neigh_neigh->get_unitig();
-                            if (nn_utg != this && nn_utg != neigh->get_unitig()){
+                            if (neigh_neighbors[j].self_orientation == utils::reverse_orientation(neighbors[i].neighbor_orientation) && nn_utg != this && nn_utg != neigh->get_unitig()){
                                 if (nn_utg->opposite_end(neigh_neigh)->num_neighbors() > 1){
                                     adj_node = neigh;
                                     return this->get_back();
@@ -251,7 +255,7 @@ Node* Unitig::get_tip_inner_end(Node*& adj_node){
                         for (size_t j{0}; j < neigh_neighbors.size(); j++){
                             Node* neigh_neigh = neigh_neighbors[j].neighbor;
                             Unitig* nn_utg = neigh_neigh->get_unitig();
-                            if (nn_utg != this && nn_utg != neigh->get_unitig()){
+                            if (neigh_neighbors[j].self_orientation == utils::reverse_orientation(neighbors[i].neighbor_orientation) && nn_utg != this && nn_utg != neigh->get_unitig()){
                                 if (nn_utg->opposite_end(neigh_neigh)->num_neighbors() > 1){
                                     adj_node = neigh;
                                     return this->get_front();

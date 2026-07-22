@@ -45,7 +45,7 @@ class Graph {
         void correct_read_error_within_unitig(DroppedBlock& to_correct, SketchedSeq*& corrected_seq);
         void correct_read_error_across_unitigs(DroppedBlock& dropped_block, SketchedSeq*& corrected_seq);
         bool add_sequence(SketchedSeq& input_seq, Graph* prev_graph);
-        bool add_connection(KmerView& first, char first_orient, KmerView& second, char second_orient);
+        bool add_connection(Node* first_node, char first_orient, Node* second_node, char second_orient);
         void handle_self_connection(Node* node);
         void check_endpoints(Node* first_node, Node* second_node);
 
@@ -54,7 +54,7 @@ class Graph {
         int next_node_id();
         int next_unitig_id();
 
-        void increment_k_min_mer_count(int increment, bool is_read, KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx);
+        Node* increment_k_min_mer_count(int increment, bool is_read, KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx);
         void increment_unitig(int increment, Unitig* to_increment);
         int k_plus_one_mer_count(Span<uint64_t>& k_syncmer);
         void destroy_unitig(Unitig* to_remove);

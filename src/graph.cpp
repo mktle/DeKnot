@@ -312,6 +312,8 @@ bool Graph::add_sequence(SketchedSeq& input_seq, Graph* prev_graph){
     char second_orient;
     KmerView first_ksyncmer = {first_kmers, first_orient == REVERSE_ORIENTATION, rh.hash_at(0, first_orient == REVERSE_ORIENTATION)};
     KmerView second_ksyncmer;
+    // cache the node pointers so add_connection doesn't re-look them up
+    Node* first_node {NULL};
 
     bool first_connection {true};
     size_t num_ksync_pairs = input_seq.kmers.size() - (size_t)this->k_prime;
@@ -327,31 +329,30 @@ bool Graph::add_sequence(SketchedSeq& input_seq, Graph* prev_graph){
             if (!input_seq.is_read){
                 increment_val = prev_graph->k_plus_one_mer_count(first_kmers);
             }
-            this->increment_k_min_mer_count(increment_val, input_seq.is_read, first_ksyncmer, first_flipped, first_unique_seq_len);
+            first_node = this->increment_k_min_mer_count(increment_val, input_seq.is_read, first_ksyncmer, first_flipped, first_unique_seq_len);
             first_connection = false;
         }
         int increment_val {1};
         if (!input_seq.is_read){
             increment_val = prev_graph->k_plus_one_mer_count(second_kmers);
         }
-        this->increment_k_min_mer_count(increment_val, input_seq.is_read, second_ksyncmer, second_flipped, second_unique_seq_len);
+        Node* second_node = this->increment_k_min_mer_count(increment_val, input_seq.is_read, second_ksyncmer, second_flipped, second_unique_seq_len);
 
         // add connection between these adjacent k-min-mers
-        this->add_connection(first_ksyncmer, first_orient, second_ksyncmer, second_orient);
+        this->add_connection(first_node, first_orient, second_node, second_orient);
         // start shift to next pair
         first_flipped = second_flipped;
         first_unique_seq_len = second_unique_seq_len;
         first_kmers = second_kmers;
         first_orient = second_orient;
         first_ksyncmer = second_ksyncmer;
+        first_node = second_node;
     }
     return input_seq.is_read;
 }
 
 
-bool Graph::add_connection(KmerView& first, char first_orient, KmerView& second, char second_orient){
-    Node* first_node {this->get_node_from_lookup_table(first)};
-    Node* second_node {this->get_node_from_lookup_table(second)};
+bool Graph::add_connection(Node* first_node, char first_orient, Node* second_node, char second_orient){
     assert(first_node != NULL);
     assert(second_node != NULL);
 
@@ -550,7 +551,7 @@ int Graph::next_unitig_id(){
 
 // k_min_mer should be reversed already for lookup
 // but the bookkeping structures won't be (to reduce number of copies)
-void Graph::increment_k_min_mer_count(int increment, bool is_read, KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx){
+Node* Graph::increment_k_min_mer_count(int increment, bool is_read, KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx){
     Node* node_ptr = get_node_from_lookup_table(k_syncmer);
     if (node_ptr == NULL){
         // have not encountered this k_min_mer before, so need to create a new node and unitig
@@ -574,6 +575,7 @@ void Graph::increment_k_min_mer_count(int increment, bool is_read, KmerView& k_s
     if(is_read){
         node_ptr->add_strand_obs(k_syncmer.flip, increment);
     }
+    return node_ptr;
 }
 
 void Graph::increment_unitig(int increment, Unitig* to_increment){
@@ -1011,24 +1013,20 @@ bool Graph::reassign_haplotype(Unitig* utg){
     }else{
         utg->set_assignment(UNASSIGNED);
     }
-    bool flipped = old_assign != utg->get_assignment();
     Unitig* par_utg = utg->get_parallel_utg();
     if (par_utg != NULL && (utg->get_assignment() == HAP1 || utg->get_assignment() == HAP2)){
-        int par_assn = (utg->get_assignment() == HAP1) ? HAP2 : HAP1;
-        par_utg->set_assignment(par_assn);
-        if (flipped && utg->get_hap_flipped()){
-            if (utg->get_hap_frac(HAP1) >= par_utg->get_hap_frac(HAP1) || (utg->get_hap_frac(HAP1) == par_utg->get_hap_frac(HAP1) && utg->get_hap_count(HAP1) >= par_utg->get_hap_count(HAP1))){
-                utg->set_assignment(HAP1);
-                par_utg->set_assignment(HAP2);
-            }else{
-                utg->set_assignment(HAP2);
-                par_utg->set_assignment(HAP1);
-            }
-        }
-        if (old_assign != utg->get_assignment()){
-            utg->get_parallel_utg()->set_hap_flipped(true);
+        if (par_utg->is_locked() && (par_utg->get_assignment() == HAP1 || par_utg->get_assignment() == HAP2)){
+            // respect a locked partner (e.g. a seed) instead of overwriting it
+            utg->set_assignment(par_utg->get_assignment() == HAP1 ? HAP2 : HAP1);
+        }else{
+            bool utg_hap1 = utg->get_hap_frac(HAP1) > par_utg->get_hap_frac(HAP1)
+                || (utg->get_hap_frac(HAP1) == par_utg->get_hap_frac(HAP1)
+                    && utg->get_hap_count(HAP1) >= par_utg->get_hap_count(HAP1));
+            utg->set_assignment(utg_hap1 ? HAP1 : HAP2);
+            par_utg->set_assignment(utg_hap1 ? HAP2 : HAP1);
         }
     }
+    bool flipped = old_assign != utg->get_assignment();
     utg->set_hap_flipped(flipped);
     return flipped;
 }

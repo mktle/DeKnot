@@ -54,7 +54,12 @@ bool phase::reassign_partitions(Graph* graph, std::vector<SketchedSeq*>& reads){
             unitig_list[i]->set_hap_flipped(false);
         }
     }
-     
+
+    std::vector<int> before(unitig_list.size());
+    for (size_t i{0}; i < unitig_list.size(); i++){
+        before[i] = unitig_list[i] != NULL ? unitig_list[i]->get_assignment() : 0;
+    }
+
     /**************************
      * Reassign unitig labels *
      **************************/
@@ -62,8 +67,12 @@ bool phase::reassign_partitions(Graph* graph, std::vector<SketchedSeq*>& reads){
     for (size_t i{0}; i < unitig_list.size(); i++){
         Unitig* utg = unitig_list[i];
         if (utg != NULL){
-            bool flipped = graph->reassign_haplotype(utg);
-            if (flipped) changed = true;
+            graph->reassign_haplotype(utg);
+        }
+    }
+    for (size_t i{0}; i < unitig_list.size(); i++){
+        if (unitig_list[i] != NULL && unitig_list[i]->get_assignment() != before[i]){
+            changed = true;
         }
     }
 
