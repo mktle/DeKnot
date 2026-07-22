@@ -69,19 +69,20 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, Sketched
     std::vector<DroppedBlock> to_correct;
     size_t check_thresh = orig_seq->kmers.size() - check_k_prime + 1;
     size_t i {0};
+    utils::RollingHasher rh(orig_seq->kmers.data(), orig_seq->kmers.size(), check_k_prime);
     /****************************************
      * Navigate to first non-null k-syncmer *
      ****************************************/
     Span<uint64_t> curr_kmers(orig_seq->kmers.data(), check_k_prime);
     char curr_orient = syncmer::canonical_syncmer(curr_kmers);
-    KmerView curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION};
+    KmerView curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION, rh.hash_at(0, curr_orient == REVERSE_ORIENTATION)};
 
     // go to the first node that was not removed from the graph
     Node* curr_node = this->get_node_from_lookup_table(curr_canon);
     while (curr_node == NULL && i < check_thresh){
         curr_kmers = Span(orig_seq->kmers.data() + i, check_k_prime);
         curr_orient = syncmer::canonical_syncmer(curr_kmers);
-        curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION};
+        curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION, rh.hash_at(i, curr_orient == REVERSE_ORIENTATION)};
         curr_node = this->get_node_from_lookup_table(curr_canon);
         i++;
     }
@@ -102,7 +103,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, Sketched
     for(; i < check_thresh; i++){
         Span<uint64_t> kmers(orig_seq->kmers.data() + i, check_k_prime);
         char orient = syncmer::canonical_syncmer(kmers);
-        KmerView canon = {kmers, orient == REVERSE_ORIENTATION};
+        KmerView canon = {kmers, orient == REVERSE_ORIENTATION, rh.hash_at(i, orient == REVERSE_ORIENTATION)};
         curr_node = this->get_node_from_lookup_table(canon);
 
         if (curr_node != NULL){
@@ -300,6 +301,7 @@ void Graph::correct_read_error_across_unitigs(DroppedBlock& dropped_block, Sketc
 
 bool Graph::add_sequence(SketchedSeq& input_seq, Graph* prev_graph){
     assert(input_seq.kmers.size() >= this->k_prime);
+    utils::RollingHasher rh(input_seq.kmers.data(), input_seq.kmers.size(), (size_t)this->k_prime);
     Span<uint8_t> first_flipped(input_seq.flipped.data(), (size_t)this->k_prime);
     Span<uint8_t> second_flipped;
     Span<int> first_unique_seq_len(input_seq.unique_seq_len.data() + 1, (size_t)this->k_prime - 1);
@@ -308,7 +310,7 @@ bool Graph::add_sequence(SketchedSeq& input_seq, Graph* prev_graph){
     Span<uint64_t> second_kmers;
     char first_orient = syncmer::canonical_syncmer(first_kmers);
     char second_orient;
-    KmerView first_ksyncmer = {first_kmers, first_orient == REVERSE_ORIENTATION};
+    KmerView first_ksyncmer = {first_kmers, first_orient == REVERSE_ORIENTATION, rh.hash_at(0, first_orient == REVERSE_ORIENTATION)};
     KmerView second_ksyncmer;
 
     bool first_connection {true};
@@ -318,7 +320,7 @@ bool Graph::add_sequence(SketchedSeq& input_seq, Graph* prev_graph){
         second_unique_seq_len = Span(input_seq.unique_seq_len.data() + i + 2, (size_t)this->k_prime - 1);
         second_kmers = Span(input_seq.kmers.data() + i + 1, (size_t)this->k_prime);
         second_orient = syncmer::canonical_syncmer(second_kmers);
-        KmerView second_ksyncmer = {second_kmers, second_orient == REVERSE_ORIENTATION};
+        KmerView second_ksyncmer = {second_kmers, second_orient == REVERSE_ORIENTATION, rh.hash_at(i + 1, second_orient == REVERSE_ORIENTATION)};
 
         if (first_connection){
             int increment_val {1};
@@ -585,15 +587,20 @@ int Graph::k_plus_one_mer_count(Span<uint64_t>& k_syncmer){
     size_t curr_k_prime {k_syncmer.size()};
     assert(curr_k_prime > this->k_prime);
     // find the minimum value across all sub-(k'-n)-syncmers
+    utils::RollingHasher rh(k_syncmer.data(), curr_k_prime, (size_t)this->k_prime);
     Span<uint64_t> copy = Span(k_syncmer.data(), (size_t)this->k_prime);
-    KmerView canon = {copy, syncmer::canonical_syncmer(copy) == REVERSE_ORIENTATION};
-    int min_val = this->node_table.count(canon) > 0 ? this->node_table[canon]->get_count() : 1;
+    char o0 = syncmer::canonical_syncmer(copy);
+    KmerView canon = {copy, o0 == REVERSE_ORIENTATION, rh.hash_at(0, o0 == REVERSE_ORIENTATION)};
+    auto it0 = this->node_table.find(canon);
+    int min_val = it0 != this->node_table.end() ? it0->second->get_count() : 1;
 
     // check all the other (k'-n) syncmers
     for (int i{0}; i < curr_k_prime - (size_t)this->k_prime; i++){
         copy = Span(k_syncmer.data() + i + 1, (size_t)this->k_prime);
-        canon = {copy, syncmer::canonical_syncmer(copy) == REVERSE_ORIENTATION};
-        int curr_val = this->node_table.count(canon) > 0 ? this->node_table[canon]->get_count() : 1;
+        char oi = syncmer::canonical_syncmer(copy);
+        canon = {copy, oi == REVERSE_ORIENTATION, rh.hash_at((size_t)i + 1, oi == REVERSE_ORIENTATION)};
+        auto it = this->node_table.find(canon);
+        int curr_val = it != this->node_table.end() ? it->second->get_count() : 1;
         if (curr_val < min_val){
             min_val = curr_val;
         }
@@ -1199,10 +1206,11 @@ void Graph::align_reads_to_unitigs(std::vector<SketchedSeq*>& reads){
             Unitig* track_utg {NULL};
             
             size_t check_thresh = reads[i]->kmers.size() - (size_t)this->get_k_prime() + 1;
+            utils::RollingHasher rh(reads[i]->kmers.data(), reads[i]->kmers.size(), (size_t)this->get_k_prime());
             for (size_t j{0}; j < check_thresh; j++){
                 Span<uint64_t> curr_kmers(reads[i]->kmers.data() + j, (size_t)this->get_k_prime());
                 char curr_orient = syncmer::canonical_syncmer(curr_kmers);
-                KmerView curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION};
+                KmerView curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION, rh.hash_at(j, curr_orient == REVERSE_ORIENTATION)};
                 Node* curr_node = this->get_node_from_lookup_table(curr_canon);
                 if (curr_node != NULL && track_utg != curr_node->get_unitig()){
                     alned_to.insert(curr_node->get_unitig());

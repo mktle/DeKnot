@@ -75,10 +75,11 @@ bool phase::reassign_partitions(Graph* graph, std::vector<SketchedSeq*>& reads){
             int num1 {0};
             int num2 {0};
             size_t check_thresh = reads[i]->kmers.size() - (size_t)graph->get_k_prime() + 1;
+            utils::RollingHasher rh(reads[i]->kmers.data(), reads[i]->kmers.size(), (size_t)graph->get_k_prime());
             for (size_t j{0}; j < check_thresh; j++){
                 Span<uint64_t> curr_kmers(reads[i]->kmers.data() + j, (size_t)graph->get_k_prime());
                 char curr_orient = syncmer::canonical_syncmer(curr_kmers);
-                KmerView curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION};
+                KmerView curr_canon = {curr_kmers, curr_orient == REVERSE_ORIENTATION, rh.hash_at(j, curr_orient == REVERSE_ORIENTATION)};
                 Node* curr_node = graph->get_node_from_lookup_table(curr_canon);
                 //if (curr_node != NULL && curr_node->get_unitig()->get_parallel_utg() != NULL){
                 if (curr_node != NULL){
