@@ -25,13 +25,6 @@ struct DroppedBlock {
     DroppedBlock(Node* e1, Node* e2, size_t s_idx, size_t e_idx, bool a) : end1(e1), end2(e2), start_idx(s_idx), end_idx(e_idx), across_utgs(a) {}
 };
 
-struct ConnectionSpan{
-    // arbitrarily assign a to be the unitig with the smaller ID
-    int utg_id_a;
-    int utg_id_b;
-    int span;
-};
-
 class Graph {
     public:
         Graph(int set_k_prime);
@@ -66,8 +59,8 @@ class Graph {
         bool check_cross_pattern(Unitig* to_check);
         void trim_tips();
         void remove_floaters(int threshold);
-        bool trim_low_freq_unitigs(int threshold, bool check_dinuc, bool check_strand);
-        bool trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>& sorted_list, bool check_dinuc, bool check_strand);
+        bool trim_low_freq_unitigs(int threshold, bool check_dinuc, bool check_strand, bool verbose);
+        bool trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>& sorted_list, bool check_dinuc, bool check_strand, bool verbose);
         bool drop_unitig(std::vector<Unitig*>& sorted_list, Node* curr_node, Unitig* neigh_utg);
         bool dinuc_topology(Node* curr_end, Unitig* dropped_utg);
         bool disconnect_unitig_end(Node* remove_node, Unitig* keep_utg, std::vector<Unitig*>& sorted_list);
@@ -85,6 +78,7 @@ class Graph {
         void update_median_coverage();
         float get_median_coverage();
         bool has_tip();
+        int num_connected_components();
         bool aligned_reads();
         void align_reads_to_unitigs(std::vector<SketchedSeq*>& reads);
 

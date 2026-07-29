@@ -741,7 +741,7 @@ void Graph::remove_floaters(int threshold){
     }
 }
 
-bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc, bool check_strand){
+bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc, bool check_strand, bool verbose){
     // we will start by merging from longer unitigs
     // so first sort the unitigs by length
     // make sure the median frequency is updated for each unitig
@@ -763,13 +763,13 @@ bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc, bool check_st
         assert(curr_utg->num_nodes() > 0);
         float current_thresh {2};
         while (current_thresh <= threshold){
-            bool compacted_front = this->trim_low_freq_end(curr_utg->get_front(), current_thresh, sorted_unitigs, check_dinuc, check_strand);
+            bool compacted_front = this->trim_low_freq_end(curr_utg->get_front(), current_thresh, sorted_unitigs, check_dinuc, check_strand, verbose);
             bool compacted_back;
             if (curr_utg->get_front() == curr_utg->get_back()){
                 // only need to handle one side for single node unitigs
                 compacted_back = compacted_front;
             }else{
-                compacted_back = this->trim_low_freq_end(curr_utg->get_back(), current_thresh, sorted_unitigs, check_dinuc, check_strand);
+                compacted_back = this->trim_low_freq_end(curr_utg->get_back(), current_thresh, sorted_unitigs, check_dinuc, check_strand, verbose);
             }
             if (check_dinuc && !(compacted_front || compacted_back)){
                 if(check_cross_pattern(curr_utg)){
@@ -791,7 +791,7 @@ bool Graph::trim_low_freq_unitigs(int threshold, bool check_dinuc, bool check_st
     return graph_changed;
 }
 
-bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>& sorted_list, bool check_dinuc, bool check_strand){
+bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>& sorted_list, bool check_dinuc, bool check_strand, bool verbose){
     Unitig* curr_utg = node_end->get_unitig();
     const std::vector<Edge> neighbors = node_end->view_neighbors();
     float lowest_freq {-1};
@@ -817,7 +817,7 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
     // compacted no neighbors based on frequency, so check for branching dinucleotide site
     // and make sure it isn't a main bubble (true variation at a dinuc site)
     if (check_dinuc && node_end->end_is_dinucleotide() && num_checked == 2 && this->dinuc_topology(node_end, lower_utg)){
-        std::cout << "Dropping based on dinucleotide criteria (utg " << lower_utg->get_id() << " dropped during check on utg" << curr_utg->get_id() << ")" << std::endl;
+        if(verbose) std::cout << "Dropping based on dinucleotide criteria (utg " << lower_utg->get_id() << " dropped during check on utg" << curr_utg->get_id() << ")" << std::endl;
         this->drop_unitig(sorted_list, node_end, lower_utg);
         assert(lower_utg != NULL);
         return true;
@@ -1193,6 +1193,39 @@ bool Graph::has_tip(){
     return false;
 }
 
+int Graph::num_connected_components(){
+    ankerl::unordered_dense::set<Unitig*> seen;
+    int num {0};
+    for (size_t i{0}; i < this->unitig_list.size(); i++){
+        Unitig* utg = this->unitig_list[i];
+        if (utg != NULL && !seen.contains(utg)){
+            num++;
+            std::vector<Unitig*> stack;
+            stack.push_back(utg);
+            seen.insert(utg);
+            while (!stack.empty()){
+                Unitig* curr = stack.back();
+                stack.pop_back();
+                // adjacency lives on the two endpoint nodes' neighbors
+                Node* ends[2] = {curr->get_front(), curr->get_back()};
+                for (int e{0}; e < 2; e++){
+                    const std::vector<Edge>& neighs = ends[e]->view_neighbors();
+                    for (size_t j{0}; j < neighs.size(); j++){
+                        Unitig* neigh_utg = neighs[j].neighbor->get_unitig();
+                        if (neigh_utg != curr && seen.find(neigh_utg) == seen.end()){
+                            seen.insert(neigh_utg);
+                            stack.push_back(neigh_utg);
+                        }
+                    }
+                }
+                // front == back for single-node unitigs; avoid scanning twice
+                if (curr->get_front() == curr->get_back()) break;
+            }
+        }
+    }
+    return num;
+}
+
 bool Graph::aligned_reads(){
     return this->saved_alns;
 }
@@ -1202,7 +1235,7 @@ void Graph::align_reads_to_unitigs(std::vector<SketchedSeq*>& reads){
         if (reads[i]->is_read && reads[i]->kmers.size() >= (size_t)this->get_k_prime()){
             ankerl::unordered_dense::set<Unitig*> alned_to;
             Unitig* track_utg {NULL};
-            
+
             size_t check_thresh = reads[i]->kmers.size() - (size_t)this->get_k_prime() + 1;
             utils::RollingHasher rh(reads[i]->kmers.data(), reads[i]->kmers.size(), (size_t)this->get_k_prime());
             for (size_t j{0}; j < check_thresh; j++){

@@ -91,7 +91,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             io::write_sequences(input_seqs, out_reads);
         }
         bool check_dinuc {k_prime - init_k_prime > 150};
-        curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc, (bool)opt->check_strand);
+        curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc, (bool)opt->check_strand, opt->verbose);
         curr_graph->remove_floaters(opt->compact_thresh);
         if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || is_checkpoint)){
             std::string out_hpc {std::string(opt->out_dir) + "/compacted_" + std::to_string(k_prime) + ".hpc.gfa"};
@@ -103,7 +103,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         }
         if(k_prime <= 300){
             curr_graph->trim_tips();
-        }else if(curr_graph->has_tip()){
+        }else if(curr_graph->has_tip() || (curr_graph->num_connected_components() > 1 && curr_graph->num_unitigs() > 2)){
             break;
         }
         curr_graph->add_unitigs_to_input(input_seqs, opt->s);
@@ -141,7 +141,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         phase::remove_tagged_unitigs(utg_list);
         round++;
     }
-    if (opt->verbose) prev_graph->print_unitigs(true, false);
+    //if (opt->verbose) prev_graph->print_unitigs(true, false);
     if (opt->out_dir != NULL){
         //std::string out_reads {std::string(opt->out_dir) + "/final_reads.fa"};
         //io::write_sequences(input_seqs, out_reads);//mkl
