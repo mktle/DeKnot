@@ -205,7 +205,7 @@ void Unitig::set_base_freq(float set_freq){
 
 // i.e., no neighbors
 bool Unitig::is_floating(){
-    return this->get_front()->is_tip() && this->get_back()->is_tip();
+    return !this->neighbors_unitig();
 }
 
 // a tip only has one neighbor, and that neighbor has another neighbor in the same direction

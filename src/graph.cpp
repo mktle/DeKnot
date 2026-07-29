@@ -816,7 +816,7 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
     }
     // compacted no neighbors based on frequency, so check for branching dinucleotide site
     // and make sure it isn't a main bubble (true variation at a dinuc site)
-    if (check_dinuc && node_end->end_is_dinucleotide() && num_checked == 2 && this->dinuc_topology(node_end, lower_utg)){
+    if (check_dinuc && num_checked == 2 && node_end->end_is_dinucleotide() && this->dinuc_topology(node_end, lower_utg)){
         if(verbose) std::cout << "Dropping based on dinucleotide criteria (utg " << lower_utg->get_id() << " dropped during check on utg" << curr_utg->get_id() << ")" << std::endl;
         this->drop_unitig(sorted_list, node_end, lower_utg);
         assert(lower_utg != NULL);
@@ -1206,7 +1206,6 @@ int Graph::num_connected_components(){
             while (!stack.empty()){
                 Unitig* curr = stack.back();
                 stack.pop_back();
-                // adjacency lives on the two endpoint nodes' neighbors
                 Node* ends[2] = {curr->get_front(), curr->get_back()};
                 for (int e{0}; e < 2; e++){
                     const std::vector<Edge>& neighs = ends[e]->view_neighbors();
@@ -1217,9 +1216,8 @@ int Graph::num_connected_components(){
                             stack.push_back(neigh_utg);
                         }
                     }
+                    if (curr->get_front() == curr->get_back()) break;
                 }
-                // front == back for single-node unitigs; avoid scanning twice
-                if (curr->get_front() == curr->get_back()) break;
             }
         }
     }
