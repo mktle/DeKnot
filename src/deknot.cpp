@@ -141,19 +141,32 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         phase::remove_tagged_unitigs(utg_list);
         round++;
     }
+    if (opt->verbose) std::cout << "Phasing assignments complete" << std::endl;
     //if (opt->verbose) prev_graph->print_unitigs(true, false);
     if (opt->out_dir != NULL){
         //std::string out_reads {std::string(opt->out_dir) + "/final_reads.fa"};
         //io::write_sequences(input_seqs, out_reads);//mkl
+        std::cout << "writing" << std::endl;//mkl
 
         std::string out_hpc {std::string(opt->out_dir) + "/final_hpc.gfa"};
         prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
+        std::cout << "writing2" << std::endl;//mkl
 
         std::string out_broken {std::string(opt->out_dir) + "/broken_hpc.gfa"};
         curr_graph->write_hpc_unitigs_to_gfa(out_broken, true);
+        std::cout << "writing3" << std::endl;//mkl
 
         std::vector<std::string> phased_walks;
-        phase::get_haplotype_sequences(prev_graph, phased_walks);
+        if(prev_graph->num_unitigs() == 2){
+            std::cout << "hi" << std::endl;//mkl
+            dk_graph_t* ret_graph = prev_graph->convert_to_gfa_representation();
+            char** expanded_sequences = dk_expand_sequences(opt, reads_arr, n_reads, ret_graph->unitigs, ret_graph->n_unitigs);
+            phased_walks.emplace_back(expanded_sequences[0]);
+            phased_walks.emplace_back(expanded_sequences[1]);
+        }else{
+            std::cout << "hi2" << std::endl;//mkl
+            phase::get_haplotype_sequences(prev_graph, phased_walks);
+        }
         std::string out_walks {std::string(opt->out_dir) + "/final_walks.fa"};
         io::write_walks(phased_walks, out_walks);
     }

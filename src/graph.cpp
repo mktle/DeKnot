@@ -975,10 +975,8 @@ void Graph::add_node_to_lookup_table(Node* to_add){
 }
 
 Node* Graph::get_node_from_lookup_table(KmerView& k_syncmer){
-    if (this->node_table.count(k_syncmer) > 0){
-        return this->node_table[k_syncmer];
-    }
-    return NULL;
+    auto it = this->node_table.find(k_syncmer);
+    return it != this->node_table.end() ? it->second : NULL;
 }
 
 bool Graph::any_connected_unitigs(){
@@ -992,43 +990,123 @@ bool Graph::any_connected_unitigs(){
 }
 
 bool Graph::reassign_haplotype(Unitig* utg){
-    if (utg->is_locked()) return false;
+    if (utg->is_locked() || utg->get_hap_updated()) return false;
+    bool changed = false;
+    Unitig* par_utg = utg->get_parallel_utg();
     utg->tally_reads();
     int c1 = utg->get_hap_count(HAP1);
     int c2 = utg->get_hap_count(HAP2);
     int old_assign = utg->get_assignment();
-    if (c1 > 0 && c2 > 0) {
-        float h1_frac = (float)c1 / (float)(c1 + c2);
-        if (h1_frac > 0.8){
-            utg->set_assignment(HAP1);
-        }else if (h1_frac < 0.2){
-            utg->set_assignment(HAP2);
+    /*******************************************************************************
+     * If in a simple bubble, update assignment in consideration with parallel utg *
+     *******************************************************************************/
+    if (par_utg != NULL){
+        assert(!par_utg->get_hap_updated());
+        par_utg->tally_reads();
+        int par_old = par_utg->get_assignment();
+        int p_c1 = par_utg->get_hap_count(HAP1);
+        int p_c2 = par_utg->get_hap_count(HAP2);
+        if (c1 + c2 + p_c1 + p_c2 == 0){
+            // no read assignments yet
+            // 0 0 0 0
+            return false;
+        }else if (c1 > 0 & c2 > 0 & p_c1 > 0 && p_c2 > 0){
+            // both unitigs have reads from both haplotypes
+            // so calculate both fractions and compare
+            // N N N N
+            float h1_frac = (float)c1 / (float)(c1 + c2);
+            float p_h1_frac = (float)p_c1 / (float)(p_c1 + p_c2);
+            if (h1_frac > p_h1_frac){
+                utg->set_assignment(HAP1);
+                par_utg->set_assignment(HAP2);
+            }else if(p_h1_frac > h1_frac || p_c1 > c1){
+                utg->set_assignment(HAP2);
+                par_utg->set_assignment(HAP1);
+            }else{
+                utg->set_assignment(HAP1);
+                par_utg->set_assignment(HAP2);
+            }
+        }else if(c1 + c2 == 0 || p_c1 + p_c2 == 0){
+            // one of the unitigs has no read assignments
+            // so just assign the one with read assignments and set parallel to be opposite
+            // 0 0 N N
+            // 0 0 N 0
+            // 0 0 0 N
+            // N N 0 0
+            // N 0 0 0
+            // 0 N 0 0
+            Unitig* inf_utg = (c1 + c2 == 0) ? par_utg : utg;
+            Unitig* oth_utg = (inf_utg == utg) ? par_utg : utg;
+            int inf_assn = (inf_utg->get_hap_count(HAP1) >= inf_utg->get_hap_count(HAP2)) ? HAP1 : HAP2;
+            int oth_assn = (inf_assn == HAP1) ? HAP2 : HAP1;
+            inf_utg->set_assignment(inf_assn);
+            oth_utg->set_assignment(oth_assn);
+        }else if (c1 + p_c1 == 0 || c2 + p_c2 == 0){
+            // both of the unitigs only have reads from the same haplotype
+            // 0 N 0 N
+            // N 0 N 0
+            int hap = (c1 + p_c1 == 0) ? HAP2 : HAP1;
+            int opp_hap = (hap == HAP1) ? HAP2 : HAP1;
+            if(utg->get_hap_count(hap) >= par_utg->get_hap_count(hap)){
+                utg->set_assignment(hap);
+                par_utg->set_assignment(opp_hap);
+            }else{
+                utg->set_assignment(opp_hap);
+                par_utg->set_assignment(hap);
+            }
+        }else if (c1 + p_c2 == 0 || c2 + p_c1 == 0){
+            // ideal case: both unitigs have evidence for opposite haplotypes only
+            // N 0 0 N
+            // 0 N N 0
+            if (c1 > 0){
+                utg->set_assignment(HAP1);
+                par_utg->set_assignment(HAP2);
+            }else{
+                utg->set_assignment(HAP1);
+                par_utg->set_assignment(HAP2);
+            }
         }else{
-            utg->set_assignment(HOM);
+            // one unitig has evidence from both, and one has evidence from only one
+            // assign based on the one with evidence from only one, unless it's a couple reads
+            // N N N 0
+            // N N 0 N
+            // N 0 N N
+            // 0 N N N
+            Unitig* both_utg = (c1 > 0 && c2 > 0) ? utg : par_utg;
+            Unitig* oth_utg = (both_utg == utg) ? par_utg : utg;
+            int oth_assn, both_assn;
+            float h1_frac = (float)both_utg->get_hap_count(HAP1) / (float)(both_utg->get_hap_count(HAP1) + both_utg->get_hap_count(HAP2));
+            if (oth_utg->get_hap_count(HAP1) + oth_utg->get_hap_count(HAP2) > 2 || both_utg->get_hap_count(HAP1) + both_utg->get_hap_count(HAP2) < 4 || h1_frac == 0.5){
+                oth_assn = (oth_utg->get_hap_count(HAP1) == 0) ? HAP2 : HAP1;
+                both_assn = (oth_assn == HAP1) ? HAP2 : HAP1;
+            }else{
+                both_assn = (h1_frac > 0.5) ? HAP1 : HAP2;
+                oth_assn = (both_assn == HAP1) ? HAP2 : HAP1;
+            }
+            both_utg->set_assignment(both_assn);
+            oth_utg->set_assignment(oth_assn);
         }
-    }else if (c1 > 0) {
-        utg->set_assignment(HAP1);
-    }else if (c2 > 0){
-        utg->set_assignment(HAP2);
+        par_utg->set_hap_updated(true);
+        if (par_old != par_utg->get_assignment()) changed = true;
     }else{
-        utg->set_assignment(UNASSIGNED);
-    }
-    Unitig* par_utg = utg->get_parallel_utg();
-    if (par_utg != NULL && (utg->get_assignment() == HAP1 || utg->get_assignment() == HAP2)){
-        if (par_utg->is_locked() && (par_utg->get_assignment() == HAP1 || par_utg->get_assignment() == HAP2)){
-            // respect a locked partner (e.g. a seed) instead of overwriting it
-            utg->set_assignment(par_utg->get_assignment() == HAP1 ? HAP2 : HAP1);
-        }else{
-            bool utg_hap1 = utg->get_hap_frac(HAP1) > par_utg->get_hap_frac(HAP1)
-                || (utg->get_hap_frac(HAP1) == par_utg->get_hap_frac(HAP1)
-                    && utg->get_hap_count(HAP1) >= par_utg->get_hap_count(HAP1));
-            utg->set_assignment(utg_hap1 ? HAP1 : HAP2);
-            par_utg->set_assignment(utg_hap1 ? HAP2 : HAP1);
+        if (c1 > 0 && c2 > 0) {
+            float h1_frac = (float)c1 / (float)(c1 + c2);
+            if (h1_frac > 0.8){
+                utg->set_assignment(HAP1);
+            }else if (h1_frac < 0.2){
+                utg->set_assignment(HAP2);
+            }else{
+                utg->set_assignment(HOM);
+            }
+        }else if (c1 > 0) {
+            utg->set_assignment(HAP1);
+        }else if (c2 > 0){
+            utg->set_assignment(HAP2);
         }
     }
-    bool flipped = old_assign != utg->get_assignment();
-    utg->set_hap_flipped(flipped);
-    return flipped;
+    if (old_assign != utg->get_assignment()) changed = true;
+    utg->set_hap_updated(true);
+    return changed;
 }
 
 void Graph::write_nodes_to_gfa(std::string& file_name, bool verbose){

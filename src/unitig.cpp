@@ -323,12 +323,12 @@ float Unitig::get_hap_frac(int id){
     return ((float)this->hap2_count / (float)(this->hap1_count + this->hap2_count));
 }
 
-void Unitig::set_hap_flipped(bool set){
-        this->hap_flipped = set;
+void Unitig::set_hap_updated(bool set){
+    this->hap_updated = set;
 }
 
-bool Unitig::get_hap_flipped(){
-        return this->hap_flipped;
+bool Unitig::get_hap_updated(){
+    return this->hap_updated;
 }
 
 void Unitig::set_parallel_utg(){

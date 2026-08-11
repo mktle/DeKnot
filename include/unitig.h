@@ -49,8 +49,8 @@ class Unitig{
         void set_hap_count(int id, int count);
         int get_hap_count(int id);
         float get_hap_frac(int id);
-        void set_hap_flipped(bool set);
-        bool get_hap_flipped();
+        void set_hap_updated(bool set);
+        bool get_hap_updated();
 
         void set_parallel_utg();
         Unitig* get_parallel_utg();
@@ -87,7 +87,7 @@ class Unitig{
         // counts of reads assigned to them
         int hap1_count;
         int hap2_count;
-        bool hap_flipped;
+        bool hap_updated;
         // to prevent flipping during haplotype reassignment if this is a seed unitig
         bool locked;
         // e.g., for DUP nodes

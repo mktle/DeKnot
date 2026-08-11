@@ -45,20 +45,17 @@ bool phase::seed_initial_haplotypes(std::vector<Unitig*>& sorted_unitigs){
 
 // return true if any assignments changed
 bool phase::reassign_partitions(Graph* graph, std::vector<SketchedSeq*>& reads){
-    /**
-     * Clear the 
-     *******/
     const std::vector<Unitig*> unitig_list = graph->view_unitigs();
+    std::vector<int> before(unitig_list.size());
     for (size_t i{0}; i < unitig_list.size(); i++){
         if (unitig_list[i] != NULL){
-            unitig_list[i]->set_hap_flipped(false);
+            unitig_list[i]->set_hap_updated(false);
+            before[i] = unitig_list[i]->get_assignment();
+        }else{
+            before[i] = 0;
         }
     }
 
-    std::vector<int> before(unitig_list.size());
-    for (size_t i{0}; i < unitig_list.size(); i++){
-        before[i] = unitig_list[i] != NULL ? unitig_list[i]->get_assignment() : 0;
-    }
 
     /**************************
      * Reassign unitig labels *
