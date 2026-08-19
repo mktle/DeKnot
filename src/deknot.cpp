@@ -10,7 +10,8 @@
 #include <fstream>
 #include <string>
 
-const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500, 1550, 1600, 1650, 1700, 1750, 1800, 1850, 1900, 1950};
+const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 110, 120, 130, 140, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500, 1550, 1600, 1650, 1700, 1750, 1800, 1850, 1900, 1950};
+//const int DEBUG_CHECKPOINTS[] = {2};
 int DEBUG_IDX = 0;
 
 bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
@@ -137,10 +138,20 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         }
     }
     dk_graph_t* ret_graph = prev_graph->convert_to_gfa_representation();
+    char** expanded_sequences;
+    std::vector<std::string> final_unitigs;
     if (prev_graph->num_unitigs() <= 2){
-        char** expanded_sequences = dk_expand_sequences(opt, reads_arr, n_reads, ret_graph->unitigs, ret_graph->n_unitigs);
-        phased_walks.emplace_back(expanded_sequences[0]);
-        phased_walks.emplace_back(expanded_sequences[1]);
+        expanded_sequences = dk_expand_sequences(opt, reads_arr, n_reads, ret_graph->unitigs, ret_graph->n_unitigs);
+    }else{
+        std::vector<char*> c_args;
+        for (auto& s : phased_walks) {
+            c_args.push_back(s.data());
+        }
+        c_args.push_back(nullptr);
+        expanded_sequences = dk_expand_sequences(opt, reads_arr, n_reads, c_args.data(), phased_walks.size());
+    }
+    for (size_t i{0}; i < phased_walks.size(); i++){
+        final_unitigs.emplace_back(expanded_sequences[i]);
     }
 
     //if (opt->verbose) prev_graph->print_unitigs(true, false);
@@ -154,8 +165,11 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         std::string out_broken {std::string(opt->out_dir) + "/broken_hpc.gfa"};
         curr_graph->write_hpc_unitigs_to_gfa(out_broken, true);
 
+        std::string out_hpc_walks {std::string(opt->out_dir) + "/final_walks.hpc.fa"};
+        io::write_walks(phased_walks, out_hpc_walks);
+
         std::string out_walks {std::string(opt->out_dir) + "/final_walks.fa"};
-        io::write_walks(phased_walks, out_walks);
+        io::write_walks(final_unitigs, out_walks);
     }
 
     if (opt->return_hpc_utg == 0){
@@ -237,13 +251,13 @@ char** dk_expand_sequences(dk_opt_t* opt, char** reads_arr, int n_reads, char** 
             // some positions may not have coverage due to being at the end of a unitig
             if (hpc_tallies[i].coverages[j] < 3){
                 if (j == 0){
-                    std::cout << "[hpc::expand_sequences] trimming start of unitig " << i << std::endl;
+                    std::cout << "[dk_expand_sequences] trimming start of unitig " << i << std::endl;
                     continue;
                 }else if (final_seq.size() == 0){
                     // still skipping over beginning of unitig
                     continue;
                 }else{
-                    std::cout << "[hpc::expand_sequences] truncating unitig " << i << " at HPC location " << j << " (out of " << hpc_tallies[i].len << ")" << std::endl;
+                    std::cout << "[dk_hpc::expand_sequences] truncating unitig " << i << " at HPC location " << j << " (out of " << hpc_tallies[i].len << ")" << std::endl;
                     break;
                 }
             }
@@ -336,8 +350,9 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
 }
 
 bool check_for_checkpoint(int curr_k_prime){
+    const int num_checkpoints = (int)(sizeof(DEBUG_CHECKPOINTS) / sizeof(DEBUG_CHECKPOINTS[0]));
     int new_idx = DEBUG_IDX;
-    while(curr_k_prime >= DEBUG_CHECKPOINTS[new_idx]){
+    while(new_idx < num_checkpoints && curr_k_prime >= DEBUG_CHECKPOINTS[new_idx]){
         new_idx++;
     }
     if (new_idx != DEBUG_IDX){
