@@ -331,6 +331,14 @@ bool Unitig::get_hap_updated(){
     return this->hap_updated;
 }
 
+void Unitig::set_component(int id){
+    this->component = id;
+}
+
+int Unitig::get_component(){
+    return this->component;
+}
+
 void Unitig::set_parallel_utg(){
     std::vector<Unitig*> parallel_utgs;
     const std::vector<Edge> front_neighs = this->get_front()->view_neighbors();

@@ -69,7 +69,11 @@ class Graph {
 
         bool any_connected_unitigs();
         bool reassign_haplotype(Unitig* utg);
-
+        void set_num_components(int num);
+        int num_components();
+        void set_largest_component(int id);
+        int get_largest_component();
+        
         void write_nodes_to_gfa(std::string& file_name, bool verbose);
         void write_hpc_unitigs_to_gfa(std::string& file_name, bool verbose);
         void free_unitig_if_empty(Unitig* to_check);
@@ -78,7 +82,7 @@ class Graph {
         void update_median_coverage();
         float get_median_coverage();
         bool has_tip();
-        int num_connected_components();
+        int identify_connected_components();
         bool aligned_reads();
         void align_reads_to_unitigs(std::vector<SketchedSeq*>& reads);
 
@@ -95,6 +99,8 @@ class Graph {
         bool saved_alns;
         float median_coverage;
         int k_prime;
+        int largest_component;
+        int num_comps;
         std::vector<Node*> node_list;
         std::vector<int> node_free_list;
         std::vector<Unitig*> unitig_list;

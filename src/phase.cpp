@@ -3,13 +3,13 @@
 #include <cassert>
 #include <iostream>
 
-void phase::initialize_unitigs_for_tagging(Graph* graph, std::vector<SketchedSeq*>& reads, std::vector<Unitig*>& sorted_unitigs){
+void phase::initialize_unitigs_for_tagging(Graph* graph, std::vector<SketchedSeq*>& reads, std::vector<Unitig*>& sorted_unitigs, int comp_num){
     graph->update_median_coverage();
     if (!graph->aligned_reads()) graph->align_reads_to_unitigs(reads);
     const std::vector<Unitig*> unitig_list = graph->view_unitigs();
     for (size_t i{0}; i < unitig_list.size(); i++){
         Unitig* utg = unitig_list[i];
-        if (utg != NULL){
+        if (utg != NULL && utg->get_component() == comp_num){
             utg->set_assignment(UNASSIGNED);
             utg->set_parallel_utg();
             sorted_unitigs.push_back(utg);
@@ -44,31 +44,22 @@ bool phase::seed_initial_haplotypes(std::vector<Unitig*>& sorted_unitigs){
 }
 
 // return true if any assignments changed
-bool phase::reassign_partitions(Graph* graph, std::vector<SketchedSeq*>& reads){
-    const std::vector<Unitig*> unitig_list = graph->view_unitigs();
-    std::vector<int> before(unitig_list.size());
-    for (size_t i{0}; i < unitig_list.size(); i++){
-        if (unitig_list[i] != NULL){
-            unitig_list[i]->set_hap_updated(false);
-            before[i] = unitig_list[i]->get_assignment();
-        }else{
-            before[i] = 0;
-        }
+bool phase::reassign_partitions(Graph* graph, std::vector<SketchedSeq*>& reads, std::vector<Unitig*>& utg_list){
+    std::vector<int> before(utg_list.size());
+    for (size_t i{0}; i < utg_list.size(); i++){
+        utg_list[i]->set_hap_updated(false);
+        before[i] = utg_list[i]->get_assignment();
     }
-
 
     /**************************
      * Reassign unitig labels *
      **************************/
     bool changed {false};
-    for (size_t i{0}; i < unitig_list.size(); i++){
-        Unitig* utg = unitig_list[i];
-        if (utg != NULL){
-            graph->reassign_haplotype(utg);
-        }
+    for (size_t i{0}; i < utg_list.size(); i++){
+        graph->reassign_haplotype(utg_list[i]);
     }
-    for (size_t i{0}; i < unitig_list.size(); i++){
-        if (unitig_list[i] != NULL && unitig_list[i]->get_assignment() != before[i]){
+    for (size_t i{0}; i < utg_list.size(); i++){
+        if (utg_list[i]->get_assignment() != before[i]){
             changed = true;
         }
     }
@@ -111,14 +102,14 @@ void phase::remove_tagged_unitigs(std::vector<Unitig*>& utg_list){
     utg_list.erase(new_end, utg_list.end());
 }
 
-void phase::identify_endpoints(Graph* graph, std::vector<std::vector<Unitig*>>& hap_endpoints, std::vector<Unitig*>& hom_endpoints){
+void phase::identify_endpoints(Graph* graph, std::vector<std::vector<Unitig*>>& hap_endpoints, std::vector<Unitig*>& hom_endpoints, int comp_num){
     hap_endpoints.resize(2);
     auto& hap1_endpoints = hap_endpoints[0];
     auto& hap2_endpoints = hap_endpoints[1];
 
     const std::vector<Unitig*> utgs = graph->view_unitigs();
     for (size_t i{0}; i < utgs.size(); i++){
-        if(utgs[i] != NULL){
+        if(utgs[i] != NULL && utgs[i]->get_component() == comp_num){
             assert(utgs[i]->get_front() != utgs[i]->get_back());
             // subtract one for the neighbor on the same unitig
             int front_neighs {utgs[i]->get_front()->num_neighbors() - 1};
@@ -140,10 +131,13 @@ void phase::identify_endpoints(Graph* graph, std::vector<std::vector<Unitig*>>& 
     std::sort(hom_endpoints.begin(), hom_endpoints.end(), compare_unitigs);
 }
 
-void phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_seqs){
+bool phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_seqs, int comp_num){
     std::vector<std::vector<Unitig*>> hap_endpoints;
     std::vector<Unitig*> hom_endpoints;
-    phase::identify_endpoints(graph, hap_endpoints, hom_endpoints);
+    phase::identify_endpoints(graph, hap_endpoints, hom_endpoints, comp_num);
+    if(hap_endpoints[0].size() == 0 && hap_endpoints[1].size() == 0 && hom_endpoints.size() == 0){
+        return false;
+    }
 
     /**********************
      * Get walk sequences *
@@ -175,6 +169,9 @@ void phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_
                     if (neigh_utg->get_assignment() == hap_num) break;
                 }
             }
+            if (start_node == NULL){
+                start_node = first_node;
+            }
         }
         std::vector<Walk> all_walks;
         Walk* curr_walk = new Walk(NULL, 0);
@@ -203,6 +200,7 @@ void phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_
         }
         ret_seqs.emplace_back(walk_seq);
     }
+    return true;
 }
 
 void phase::add_to_walk(std::vector<Walk>& all_walks, Walk* curr_walk, Node* to_add, int hap_num){
@@ -254,4 +252,35 @@ void phase::add_to_walk(std::vector<Walk>& all_walks, Walk* curr_walk, Node* to_
     add_utg->set_times_walked(times_walked);
     curr_walk->utgs.pop_back();
     curr_walk->num_hap_nodes -= hap_weight;
+}
+
+void phase::phase_component(int comp_num, std::vector<std::string>& phased_walks, Graph* prev_graph, std::vector<SketchedSeq*>& corrected_seqs, bool verbose){
+    // this will be filled by next function call
+    std::vector<Unitig*> utg_list;
+    phase::initialize_unitigs_for_tagging(prev_graph, corrected_seqs, utg_list, comp_num);
+    if (utg_list.size() == 1){
+        std::string utg_seq;
+        utg_list[0]->get_hpc_sequence(utg_seq, false, false);
+        phased_walks.emplace_back(utg_seq);
+    }else{
+        int round {0};
+        while(utg_list.size() > 0){
+            if (!phase::seed_initial_haplotypes(utg_list)){
+                // no more bubbles, remaining unitigs are homozygous
+                for (size_t i{0}; i < utg_list.size(); i++){
+                    utg_list[i]->set_assignment(HOM);
+                }
+                break;
+            }
+            int it {0};
+            while(phase::reassign_partitions(prev_graph, corrected_seqs, utg_list) && it < 100){
+                if (verbose && it % 10 == 0) std::cout << "(" << comp_num << ") Phasing round " << round << ", iteration " << it << std::endl;
+                it++;
+            }
+            phase::remove_tagged_unitigs(utg_list);
+            round++;
+        }
+        if (verbose) std::cout << "(" << comp_num << ") Phasing assignments complete" << std::endl;
+        phase::get_haplotype_sequences(prev_graph, phased_walks, comp_num);
+    }
 }

@@ -51,6 +51,8 @@ class Unitig{
         float get_hap_frac(int id);
         void set_hap_updated(bool set);
         bool get_hap_updated();
+        void set_component(int id);
+        int get_component();
 
         void set_parallel_utg();
         Unitig* get_parallel_utg();
@@ -84,6 +86,8 @@ class Unitig{
         std::vector<SketchedSeq*> aligned_seqs;
         // haplotype assignment
         int assignment;
+        // connected component assignment
+        int component;
         // counts of reads assigned to them
         int hap1_count;
         int hap2_count;

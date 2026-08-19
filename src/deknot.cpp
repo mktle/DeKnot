@@ -49,6 +49,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
     std::vector<SketchedSeq*> input_seqs;
     syncmer::sketch_sequences(opt->s, reads, names, input_seqs);
     std::vector<SketchedSeq*> prev_seqs;
+    std::vector<SketchedSeq*> backing_prev_graph;
     // to be used for phasing
     std::vector<SketchedSeq*> corrected_seqs;
 
@@ -103,75 +104,60 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         }
         if(k_prime <= 300){
             curr_graph->trim_tips();
-        }else if(curr_graph->has_tip() || (curr_graph->num_connected_components() > 1 && curr_graph->num_unitigs() > 2)){
+        }else if(curr_graph->has_tip() || (curr_graph->identify_connected_components() > 1 && curr_graph->num_unitigs() > 2)){
             break;
         }
         curr_graph->add_unitigs_to_input(input_seqs, opt->s);
         if (prev_graph != NULL){
             delete prev_graph;
+            for (SketchedSeq* retired : backing_prev_graph){
+                delete retired;
+            }
         }
+        backing_prev_graph = std::move(prev_seqs);
         k_prime = curr_graph->get_k_prime() + 1;
         prev_graph = curr_graph;
         curr_graph = new Graph(k_prime);
     }
     prev_graph->trim_tips();
-    
-    // this will be filled by next function call
-    std::vector<Unitig*> utg_list;
-    phase::initialize_unitigs_for_tagging(prev_graph, corrected_seqs, utg_list);
-
-    int round {0};
-    while(utg_list.size() > 0){
-        if (!phase::seed_initial_haplotypes(utg_list)){
-            // no more bubbles, remaining unitigs are homozygous
-            for (size_t i{0}; i < utg_list.size(); i++){
-                utg_list[i]->set_assignment(HOM);
-            }
-            break;
-        }
-        //std::string out_hpc {std::string(opt->out_dir) + "/round_" + std::to_string(round) + "_init.gfa"};
-        //prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
-        int it {0};
-        while(phase::reassign_partitions(prev_graph, corrected_seqs) && it < 100){
-            //out_hpc = std::string(opt->out_dir) + "/round_" + std::to_string(round) + "_iter" + std::to_string(it) + ".gfa";
-            //prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
-            if (opt->verbose && it % 10 == 0) std::cout << "Phasing round " << round << ", iteration " << it << std::endl;
-            it++;
-        }
-        phase::remove_tagged_unitigs(utg_list);
-        round++;
+    if(prev_graph->get_largest_component() == -1){
+        prev_graph->identify_connected_components();
     }
-    if (opt->verbose) std::cout << "Phasing assignments complete" << std::endl;
+    
+    std::vector<std::string> phased_walks;
+
+    if(prev_graph->num_unitigs() > 2){
+        phase::phase_component(prev_graph->get_largest_component(), phased_walks, prev_graph, corrected_seqs, opt->verbose);
+        if (prev_graph->num_components() > 1){
+            for (size_t i{1}; i <= prev_graph->num_components(); i++){
+                if (i != prev_graph->get_largest_component()){
+                    phase::phase_component(i, phased_walks, prev_graph, corrected_seqs, opt->verbose);
+                }
+            }
+        }
+    }
+    dk_graph_t* ret_graph = prev_graph->convert_to_gfa_representation();
+    if (prev_graph->num_unitigs() <= 2){
+        char** expanded_sequences = dk_expand_sequences(opt, reads_arr, n_reads, ret_graph->unitigs, ret_graph->n_unitigs);
+        phased_walks.emplace_back(expanded_sequences[0]);
+        phased_walks.emplace_back(expanded_sequences[1]);
+    }
+
     //if (opt->verbose) prev_graph->print_unitigs(true, false);
     if (opt->out_dir != NULL){
         //std::string out_reads {std::string(opt->out_dir) + "/final_reads.fa"};
-        //io::write_sequences(input_seqs, out_reads);//mkl
-        std::cout << "writing" << std::endl;//mkl
+        //io::write_sequences(input_seqs, out_reads);
 
         std::string out_hpc {std::string(opt->out_dir) + "/final_hpc.gfa"};
         prev_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
-        std::cout << "writing2" << std::endl;//mkl
 
         std::string out_broken {std::string(opt->out_dir) + "/broken_hpc.gfa"};
         curr_graph->write_hpc_unitigs_to_gfa(out_broken, true);
-        std::cout << "writing3" << std::endl;//mkl
 
-        std::vector<std::string> phased_walks;
-        if(prev_graph->num_unitigs() == 2){
-            std::cout << "hi" << std::endl;//mkl
-            dk_graph_t* ret_graph = prev_graph->convert_to_gfa_representation();
-            char** expanded_sequences = dk_expand_sequences(opt, reads_arr, n_reads, ret_graph->unitigs, ret_graph->n_unitigs);
-            phased_walks.emplace_back(expanded_sequences[0]);
-            phased_walks.emplace_back(expanded_sequences[1]);
-        }else{
-            std::cout << "hi2" << std::endl;//mkl
-            phase::get_haplotype_sequences(prev_graph, phased_walks);
-        }
         std::string out_walks {std::string(opt->out_dir) + "/final_walks.fa"};
         io::write_walks(phased_walks, out_walks);
     }
 
-    dk_graph_t* ret_graph = prev_graph->convert_to_gfa_representation();
     if (opt->return_hpc_utg == 0){
         char** expanded_sequences = dk_expand_sequences(opt, reads_arr, n_reads, ret_graph->unitigs, ret_graph->n_unitigs);
         //free HPC versions of the unitigs
@@ -334,14 +320,8 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
             remove_set.insert(seq_idx);
         }
     }
-
-    for (size_t i{0}; i < prev_seqs.size(); i++){
-        delete prev_seqs[i];
-    }
     prev_seqs.clear();
 
-    // remove discarded sequences from the next graph's input
-    // cannot delete them just yet because the next graph may need to access their nodes
     std::vector<SketchedSeq*> kept;
     kept.reserve(input_sequences.size() - remove_set.size());
     for (size_t i{0}; i < input_sequences.size(); i++){

@@ -16,6 +16,8 @@ Graph::Graph(int set_k_prime){
     assert(this->node_table.size() == 0);
     this->k_prime = set_k_prime;
     this->saved_alns = false;
+    this->num_comps = -1;
+    this->largest_component = -1;
 }
 
 Graph::~Graph(){
@@ -816,7 +818,7 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
     }
     // compacted no neighbors based on frequency, so check for branching dinucleotide site
     // and make sure it isn't a main bubble (true variation at a dinuc site)
-    if (check_dinuc && num_checked == 2 && node_end->end_is_dinucleotide() && this->dinuc_topology(node_end, lower_utg)){
+    if (check_dinuc && num_checked == 2 && node_end->get_unitig()->num_nodes() > 1 && node_end->end_is_dinucleotide() && this->dinuc_topology(node_end, lower_utg)){
         if(verbose) std::cout << "Dropping based on dinucleotide criteria (utg " << lower_utg->get_id() << " dropped during check on utg" << curr_utg->get_id() << ")" << std::endl;
         this->drop_unitig(sorted_list, node_end, lower_utg);
         assert(lower_utg != NULL);
@@ -1109,6 +1111,23 @@ bool Graph::reassign_haplotype(Unitig* utg){
     return changed;
 }
 
+void Graph::set_num_components(int num){
+    this->num_comps = num;
+}
+
+int Graph::num_components(){
+    assert(this->num_comps != -1);
+    return this->num_comps;
+}
+
+void Graph::set_largest_component(int id){
+    this->largest_component = id;
+}
+
+int Graph::get_largest_component(){
+    return this->largest_component;
+}
+
 void Graph::write_nodes_to_gfa(std::string& file_name, bool verbose){
     std::ofstream out_file(file_name);
     for (size_t i{0}; i < this->node_list.size(); i++){
@@ -1263,7 +1282,6 @@ bool Graph::has_tip(){
             Node* adj_node;
             Node* inner_end = utg->get_tip_inner_end(adj_node);
             if (inner_end != NULL){
-                std::cout << "found a tip in " << utg->get_id() << std::endl;//mkl
                 return true;
             }
         }
@@ -1271,19 +1289,24 @@ bool Graph::has_tip(){
     return false;
 }
 
-int Graph::num_connected_components(){
+int Graph::identify_connected_components(){
     ankerl::unordered_dense::set<Unitig*> seen;
     int num {0};
+    int longest {0};
+    int longest_len {-1};
     for (size_t i{0}; i < this->unitig_list.size(); i++){
         Unitig* utg = this->unitig_list[i];
         if (utg != NULL && !seen.contains(utg)){
             num++;
+            int curr_len {0};
             std::vector<Unitig*> stack;
             stack.push_back(utg);
             seen.insert(utg);
+            utg->set_component(num);
             while (!stack.empty()){
                 Unitig* curr = stack.back();
                 stack.pop_back();
+                curr_len += curr->num_nodes();
                 Node* ends[2] = {curr->get_front(), curr->get_back()};
                 for (int e{0}; e < 2; e++){
                     const std::vector<Edge>& neighs = ends[e]->view_neighbors();
@@ -1292,13 +1315,20 @@ int Graph::num_connected_components(){
                         if (neigh_utg != curr && seen.find(neigh_utg) == seen.end()){
                             seen.insert(neigh_utg);
                             stack.push_back(neigh_utg);
+                            neigh_utg->set_component(num);
                         }
                     }
                     if (curr->get_front() == curr->get_back()) break;
                 }
             }
+            if (curr_len > longest_len){
+                longest_len = curr_len;
+                longest = num;
+            }
         }
     }
+    this->set_largest_component(longest);
+    this->set_num_components(num);
     return num;
 }
 
