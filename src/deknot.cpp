@@ -245,6 +245,7 @@ char** dk_expand_sequences(dk_opt_t* opt, char** reads_arr, int n_reads, char** 
      * Expand sequences *
      ********************/
     std::vector<std::string> ret_seqs;
+    int end {-1};
     for (size_t i{0}; i < hpc_seqs.size(); i++){
         std::string final_seq {""};
         for (size_t j{0}; j < hpc_tallies[i].len; j++){
@@ -257,13 +258,28 @@ char** dk_expand_sequences(dk_opt_t* opt, char** reads_arr, int n_reads, char** 
                     // still skipping over beginning of unitig
                     continue;
                 }else{
-                    std::cout << "[dk_hpc::expand_sequences] truncating unitig " << i << " at HPC location " << j << " (out of " << hpc_tallies[i].len << ")" << std::endl;
-                    break;
+                    // check if this is a temporary dip or actually the end
+                    if (end == -1){
+                        end = (int)hpc_tallies[i].len;
+                        while(end > i && hpc_tallies[i].coverages[end] < 3){
+                            end--;
+                        }
+                    }
+                    if (j <= end){
+                        int num_to_add = (hpc_tallies[i].coverages[j] == 0) ? 1 : (int)std::round((float)hpc_tallies[i].sums[j] / (float)hpc_tallies[i].coverages[j]);
+                        for (int k{0}; k < num_to_add; k++){
+                            final_seq += hpc_seqs[i][j];
+                        }
+                    }else{
+                        std::cout << "[dk_hpc::expand_sequences] truncating unitig " << i << " at HPC location " << j << " (out of " << hpc_tallies[i].len << ")" << std::endl;
+                        break;
+                    }
                 }
-            }
-            int num_to_add = (int)std::round((float)hpc_tallies[i].sums[j] / (float)hpc_tallies[i].coverages[j]);
-            for (int k{0}; k < num_to_add; k++){
-                final_seq += hpc_seqs[i][j];
+            }else{
+                int num_to_add = (int)std::round((float)hpc_tallies[i].sums[j] / (float)hpc_tallies[i].coverages[j]);
+                for (int k{0}; k < num_to_add; k++){
+                    final_seq += hpc_seqs[i][j];
+                }
             }
         }
         ret_seqs.push_back(std::move(final_seq));
