@@ -6,6 +6,8 @@
 
 #include <vector>
 
+const int LOOKAHEAD_BUDGET = 256;
+
 const int UNASSIGNED = -1;
 const int HOM = 0;
 const int HAP1 = 1;
@@ -26,7 +28,8 @@ namespace phase{
     void remove_tagged_unitigs(std::vector<Unitig*>& utg_list);
     void identify_endpoints(Graph* graph, std::vector<std::vector<Unitig*>>& hap_endpoints, std::vector<Unitig*>& hom_endpoints, int comp_num);
     bool get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_seqs, int comp_num);
-    void add_to_walk(std::vector<Walk>& all_walks, Walk* curr_walk, Node* to_add, int hap_num);
+    void build_walk(Walk& walk, Node* start_node, int hap_num);
+    int lookahead_score(Node* to_add, int hap_num, int& budget);
     void phase_component(int comp_num, std::vector<std::string>& phased_walks, Graph* prev_graph, std::vector<SketchedSeq*>& corrected_seqs, bool verbose);
 }
 

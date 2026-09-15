@@ -724,7 +724,7 @@ void Graph::trim_tips(){
             if (inner_end != NULL){
                 assert(keep_node != NULL);
                 Unitig* keep_utg = keep_node->get_unitig();
-                if (utg->get_median_freq() < 0.5 * keep_utg->get_median_freq() && utg->num_nodes() < 500){
+                if (utg->get_median_freq() < 0.5 * keep_utg->get_median_freq() && utg->num_nodes() < std::max(500, 3 * this->get_k_prime())){
                     changed = true;
                     this->disconnect_unitig_end(inner_end, keep_utg, sorted_unitigs);
                     this->destroy_unitig(utg);
@@ -804,7 +804,7 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
         Unitig* neigh_utg = neigh_node->get_unitig();
         if (neigh_utg != curr_utg){
             int min_strand_support;
-            if (neigh_utg->get_median_freq() < thresh || (check_strand && neigh_utg->min_minority_strand_count(min_strand_support) < 2 && min_strand_support >= 4)){
+            if ((neigh_utg->get_median_freq() < thresh && neigh_utg->num_nodes() < 3 * this->get_k_prime()) || (check_strand && neigh_utg->min_minority_strand_count(min_strand_support) < 2 && min_strand_support >= 4)){
                 this->drop_unitig(sorted_list, node_end, neigh_utg);
                 return true;
             }else{
