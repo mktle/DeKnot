@@ -9,7 +9,9 @@
 #include <cmath>
 #include <iostream>
 #include <fstream>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 
 const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 110, 120, 130, 140, 150, 200, 210, 220, 230, 238, 240, 250, 300, 350, 400, 450, 466, 468, 469, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500, 1550, 1600, 1650, 1700, 1750, 1800, 1850, 1900, 1950};
 //const int DEBUG_CHECKPOINTS[] = {2};
@@ -36,16 +38,22 @@ int dk_set_opt(const char* preset, dk_opt_t* opt){
     return 0;
 }
 
-dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names, int n_reads){
+static dk_graph_t* dk_assemble_core(dk_opt_t* opt, char** reads_arr, char** read_names, int n_reads, dk_walks_t** walks_out){
+    if (n_reads <= 0 || reads_arr == NULL) return NULL;
     /************************************************************
      * Initialization (convert to C++ structures, sketch reads) *
      ************************************************************/
-    hash::initialize_dinucleotide_hashes();
-    std::vector<std::string> reads(reads_arr, reads_arr + n_reads);
+    static std::once_flag dinuc_init_flag;
+    std::call_once(dinuc_init_flag, hash::initialize_dinucleotide_hashes);
+    std::vector<std::string> reads;
     std::vector<std::string> names;
-    if (read_names != NULL){
-        for (int i{0}; i < n_reads; i++){
+    for (int i{0}; i < n_reads; i++){
+        if (reads_arr[i] == NULL) return NULL;
+        reads.emplace_back(reads_arr[i]);
+        if (read_names != NULL && read_names[i] != NULL){
             names.emplace_back(read_names[i]);
+        }else{
+            names.emplace_back("read_" + std::to_string(i));
         }
     }
     std::vector<SketchedSeq*> input_seqs;
@@ -91,7 +99,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             std::cout << curr_graph->num_nodes() << " initial nodes" << std::endl;
             std::cout << curr_graph->num_unitigs() << " initial unitigs" << std::endl;
         }
-        bool is_checkpoint = check_for_checkpoint(k_prime);
+        bool is_checkpoint = (opt->out_dir != NULL) && check_for_checkpoint(k_prime);
         if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || is_checkpoint)){
             std::string out_unitigs {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + ".gfa"};
             //std::string out_nodes {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + "_nodes.gfa"};
@@ -123,6 +131,10 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         k_prime = curr_graph->get_k_prime() + 1;
         prev_graph = curr_graph;
         curr_graph = new Graph(k_prime);
+    }
+    if (prev_graph == NULL){
+        delete curr_graph;
+        return NULL;
     }
     prev_graph->trim_tips();
     if(prev_graph->get_largest_component() == -1){
@@ -187,7 +199,49 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
         }
         ret_graph->unitigs = expanded_sequences;
     }
+
+    if (walks_out != NULL){
+        dk_walks_t* walks = new dk_walks_t();
+        walks->n_walks = (int)final_unitigs.size();
+        walks->walks = new char*[final_unitigs.size()];
+        for (size_t i{0}; i < final_unitigs.size(); i++){
+            walks->walks[i] = new char[final_unitigs[i].size() + 1];
+            std::strcpy(walks->walks[i], final_unitigs[i].c_str());
+        }
+        walks->read_assignments = new int[(size_t)n_reads]();
+        std::unordered_map<std::string, int> name_to_idx;
+        for (int i{0}; i < n_reads; i++){
+            name_to_idx[names[(size_t)i]] = i;
+        }
+        for (SketchedSeq* seq : corrected_seqs){
+            auto it = name_to_idx.find(seq->name);
+            if (it != name_to_idx.end() && seq->assignment > 0){
+                walks->read_assignments[it->second] = seq->assignment;
+            }
+        }
+        *walks_out = walks;
+    }
     return ret_graph;
+}
+
+dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names, int n_reads){
+    return dk_assemble_core(opt, reads_arr, read_names, n_reads, NULL);
+}
+
+dk_walks_t* dk_assemble_walks(dk_opt_t* opt, char** reads_arr, char** read_names, int n_reads){
+    dk_walks_t* walks = NULL;
+    dk_graph_t* ret_graph = dk_assemble_core(opt, reads_arr, read_names, n_reads, &walks);
+    if (ret_graph != NULL) dk_graph_free(ret_graph);
+    return walks;
+}
+
+void dk_walks_free(dk_walks_t* to_free){
+    for (int i{0}; i < to_free->n_walks; i++){
+        delete[] to_free->walks[i];
+    }
+    delete[] to_free->walks;
+    delete[] to_free->read_assignments;
+    delete to_free;
 }
 
 char** dk_expand_sequences(dk_opt_t* opt, char** reads_arr, int n_reads, char** hpc_seqs_arr, int n_unitigs){
@@ -259,7 +313,7 @@ char** dk_expand_sequences(dk_opt_t* opt, char** reads_arr, int n_reads, char** 
             // some positions may not have coverage due to being at the end of a unitig
             if (hpc_tallies[i].coverages[j] < 3){
                 if (j == 0){
-                    std::cout << "[dk_expand_sequences] trimming start of unitig " << i << std::endl;
+                    if (opt->verbose) std::cout << "[dk_expand_sequences] trimming start of unitig " << i << std::endl;
                     continue;
                 }else if (final_seq.size() == 0){
                     // still skipping over beginning of unitig
@@ -278,7 +332,7 @@ char** dk_expand_sequences(dk_opt_t* opt, char** reads_arr, int n_reads, char** 
                             final_seq += hpc_seqs[i][j];
                         }
                     }else{
-                        std::cout << "[dk_hpc::expand_sequences] truncating unitig " << i << " at HPC location " << j << " (out of " << hpc_tallies[i].len << ")" << std::endl;
+                        if (opt->verbose) std::cout << "[dk_hpc::expand_sequences] truncating unitig " << i << " at HPC location " << j << " (out of " << hpc_tallies[i].len << ")" << std::endl;
                         break;
                     }
                 }

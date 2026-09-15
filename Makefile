@@ -12,10 +12,16 @@ OBJ_FILES = $(patsubst $(SRC1_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(filter %.cpp,$(SRC_F
             $(patsubst $(SRC1_DIR)/%.c,$(BUILD_DIR)/%.o,$(filter %.c,$(SRC_FILES)))
 
 TARGET = deknot
+LIB_TARGET = libdeknot.a
 
 # Rule to build the target
 $(TARGET): $(OBJ_FILES)
 	$(CC) $(CFLAGS) -o $@ $(OBJ_FILES)
+
+$(LIB_TARGET): $(filter-out $(BUILD_DIR)/main.o,$(OBJ_FILES))
+	ar rcs $@ $^
+
+lib: $(LIB_TARGET)
 
 $(BUILD_DIR)/%.o: $(SRC1_DIR)/%.cpp | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@

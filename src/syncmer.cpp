@@ -45,6 +45,7 @@ SketchedSeq* syncmer::split_sequence(SketchedSeq* init_seq, size_t idx_first, si
 }
 
 void syncmer::get_all_syncmers(std::string& sequence, int s, std::vector<uint64_t>& kmer_list, std::vector<uint8_t>& flipped_list, std::vector<int>& unique_seq_len, std::vector<int>& indices){
+    if (sequence.size() < (size_t)KMER_SIZE) return;
     uint64_t curr_hash {0};
     uint64_t rc_hash {0};
     bool first_is_syncmer {false};
