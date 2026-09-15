@@ -142,6 +142,9 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
     std::vector<std::string> final_unitigs;
     if (prev_graph->num_unitigs() <= 2){
         expanded_sequences = dk_expand_sequences(opt, reads_arr, n_reads, ret_graph->unitigs, ret_graph->n_unitigs);
+        for (int i{0}; i < ret_graph->n_unitigs; i++){
+            phased_walks.emplace_back(ret_graph->unitigs[i]);
+        }
     }else{
         std::vector<char*> c_args;
         for (auto& s : phased_walks) {
