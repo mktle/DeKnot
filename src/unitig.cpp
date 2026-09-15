@@ -366,7 +366,38 @@ void Unitig::set_parallel_utg(){
                         break;
                     }
                 }
-                if (connected) parallel_utgs.push_back(parallel_utg);
+                if (connected){
+                    parallel_utgs.push_back(parallel_utg);
+                }else if (parallel_utg != this
+                          && !this->get_back()->neighbors_diff_utg()
+                          && !parallel_utg->opposite_end(parallel_node)->neighbors_diff_utg()){
+                    parallel_utgs.push_back(parallel_utg);
+                }
+            }
+        }
+    }
+    if (parallel_utgs.empty() && !this->get_front()->neighbors_diff_utg()){
+        for (size_t i{0}; i < back_neighs.size(); i++){
+            Node* neigh = back_neighs[i].neighbor;
+            if (neigh->get_unitig() == this) continue;
+            const std::vector<Edge> bnns = neigh->view_neighbors();
+            char check_dir = INVALID_ORIENTATION;
+            for (size_t j{0}; j < bnns.size(); j++){
+                if (bnns[j].neighbor == this->get_back()){
+                    check_dir = bnns[j].self_orientation;
+                    break;
+                }
+            }
+            assert(check_dir != INVALID_ORIENTATION);
+            for (size_t j{0}; j < bnns.size(); j++){
+                Node* parallel_node = bnns[j].neighbor;
+                if (parallel_node != this->get_back() && bnns[j].self_orientation == check_dir){
+                    Unitig* parallel_utg = parallel_node->get_unitig();
+                    if (parallel_utg != this
+                        && !parallel_utg->opposite_end(parallel_node)->neighbors_diff_utg()){
+                        parallel_utgs.push_back(parallel_utg);
+                    }
+                }
             }
         }
     }

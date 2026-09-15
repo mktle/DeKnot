@@ -4,6 +4,7 @@
 #include "io.h"
 #include "phase.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <iostream>
@@ -14,7 +15,7 @@ const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 110, 120, 130, 140, 150, 200, 21
 //const int DEBUG_CHECKPOINTS[] = {2};
 int DEBUG_IDX = 0;
 
-bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
+bool construct_graph(int k_prime, int max_k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
 
 void dk_opt_init(dk_opt_t* opt){
     memset(opt, 0, sizeof(dk_opt_t));
@@ -54,6 +55,13 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
     // to be used for phasing
     std::vector<SketchedSeq*> corrected_seqs;
 
+    std::vector<size_t> read_kmer_counts;
+    for (auto* seq : input_seqs){
+        if (seq->is_read) read_kmer_counts.push_back(seq->kmers.size());
+    }
+    std::sort(read_kmer_counts.begin(), read_kmer_counts.end());
+    int max_k_prime = (int)(read_kmer_counts[read_kmer_counts.size() / 2] / 2);
+
     /*************************************************************************
      * Loop until unitigs are all disconnected or max iterations are reached *
      *************************************************************************/
@@ -61,11 +69,11 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
     int init_k_prime = opt->init_k_prime;
     int k_prime = init_k_prime;
     Graph* curr_graph = new Graph(k_prime);
-    while(k_prime <= init_k_prime + opt->max_iterations && (prev_graph == NULL || prev_graph->any_connected_unitigs())){
+    while(k_prime <= init_k_prime + opt->max_iterations && k_prime <= max_k_prime && (prev_graph == NULL || prev_graph->any_connected_unitigs())){
         if(opt->verbose){
             std::cout << "\n*****\nbeginning construction:" << std::endl;
         }
-        if (!construct_graph(k_prime, prev_seqs, input_seqs, prev_graph, curr_graph, opt->verbose)){
+        if (!construct_graph(k_prime, max_k_prime, prev_seqs, input_seqs, prev_graph, curr_graph, opt->verbose)){
             return NULL;
         }
         k_prime = curr_graph->get_k_prime();
@@ -103,11 +111,7 @@ dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names
             std::cout << curr_graph->num_nodes() << " nodes after compaction" << std::endl;
             std::cout << curr_graph->num_unitigs() << " unitigs after compaction" << std::endl;
         }
-        if(k_prime <= 300){
-            curr_graph->trim_tips();
-        }else if(curr_graph->has_tip() || (curr_graph->identify_connected_components() > 1 && curr_graph->num_unitigs() > 2)){
-            break;
-        }
+        curr_graph->trim_tips();
         curr_graph->add_unitigs_to_input(input_seqs, opt->s);
         if (prev_graph != NULL){
             delete prev_graph;
@@ -316,7 +320,7 @@ void dk_graph_free(dk_graph_t* to_free){
     delete[] to_free;
 }
 
-bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose){
+bool construct_graph(int k_prime, int max_k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose){
     ankerl::unordered_dense::set<size_t> remove_set;
     std::vector<SketchedSeq*> corrected_seqs;
     // check the sequences to see if they should be removed (and also calculate jump length)
@@ -341,6 +345,7 @@ bool construct_graph(int k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vec
     // if we're skipping iterations, update k' value for current graph
     if(prev_graph != NULL){
         k_prime += std::max(prev_graph->min_connect_size() - 2, 0);
+        if (k_prime > max_k_prime) k_prime = max_k_prime;
     }
     dbg->set_k_prime(k_prime);
 
