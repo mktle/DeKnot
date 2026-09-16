@@ -309,9 +309,9 @@ char** dk_expand_sequences(dk_opt_t* opt, char** reads_arr, int n_reads, char** 
      * Expand sequences *
      ********************/
     std::vector<std::string> ret_seqs;
-    int end {-1};
     for (size_t i{0}; i < hpc_seqs.size(); i++){
         std::string final_seq {""};
+        int end {-1};
         for (size_t j{0}; j < hpc_tallies[i].len; j++){
             // some positions may not have coverage due to being at the end of a unitig
             if (hpc_tallies[i].coverages[j] < 3){
@@ -324,8 +324,8 @@ char** dk_expand_sequences(dk_opt_t* opt, char** reads_arr, int n_reads, char** 
                 }else{
                     // check if this is a temporary dip or actually the end
                     if (end == -1){
-                        end = (int)hpc_tallies[i].len;
-                        while(end > i && hpc_tallies[i].coverages[end] < 3){
+                        end = (int)hpc_tallies[i].len - 1;
+                        while(end > 0 && hpc_tallies[i].coverages[end] < 3){
                             end--;
                         }
                     }
