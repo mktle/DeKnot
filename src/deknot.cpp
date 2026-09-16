@@ -245,6 +245,9 @@ void dk_walks_free(dk_walks_t* to_free){
 }
 
 char** dk_expand_sequences(dk_opt_t* opt, char** reads_arr, int n_reads, char** hpc_seqs_arr, int n_unitigs){
+    if (n_unitigs <= 0){
+        return new char*[1]();
+    }
     /*****************************
      * Convert to C++ structures *
      *****************************/

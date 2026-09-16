@@ -43,6 +43,7 @@ void hpc::align_single_read(std::vector<uint64_t>& kmer_list, ankerl::unordered_
      * Find all segments with exact match to a unitig, seeking the unitig with the longest match *
      *********************************************************************************************/
     std::vector<AlignedSegment> alignments;
+    if (kmer_list.size() < 2) return;
     // check segments for hits
     size_t i{0};
     while (i < kmer_list.size() - 1){
