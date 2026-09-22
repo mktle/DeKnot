@@ -46,25 +46,52 @@ SketchedSeq* syncmer::split_sequence(SketchedSeq* init_seq, size_t idx_first, si
 
 void syncmer::get_all_syncmers(std::string& sequence, int s, std::vector<uint64_t>& kmer_list, std::vector<uint8_t>& flipped_list, std::vector<int>& unique_seq_len, std::vector<int>& indices){
     if (sequence.size() < (size_t)KMER_SIZE) return;
+    const int k {KMER_SIZE};
     uint64_t curr_hash {0};
     uint64_t rc_hash {0};
-    bool first_is_syncmer {false};
-    std::string start_kmer = sequence.substr(0, KMER_SIZE);
-    bool took_reverse = hash::hash_entire_kmer(curr_hash, rc_hash, start_kmer, s, first_is_syncmer);
-    int next_pos {KMER_SIZE};
-    if (!first_is_syncmer){
-        took_reverse = syncmer::next_syncmer(KMER_SIZE, s, sequence, next_pos, curr_hash, rc_hash);
-    }
+    static thread_local std::vector<std::pair<uint64_t, int>> fq;
+    static thread_local std::vector<std::pair<uint64_t, int>> rq;
+    fq.clear();
+    rq.clear();
+    size_t f_head {0};
+    size_t r_head {0};
     int prev_pos {0};
-    //  index will be set to -1 when the hash function gets to the end of the sequence
-    while (next_pos != -1){
-        uint64_t hash = (took_reverse) ? rc_hash : curr_hash;
-        kmer_list.push_back(hash);
-        flipped_list.push_back(took_reverse);
-        unique_seq_len.push_back(next_pos - prev_pos);
-        prev_pos = next_pos;
-        indices.push_back(next_pos - KMER_SIZE);
-        took_reverse = syncmer::next_syncmer(KMER_SIZE, s, sequence, next_pos, curr_hash, rc_hash);
+    for (int pos{0}; pos < (int)sequence.size(); pos++){
+        curr_hash += hash::base_to_val(sequence[(size_t)pos]);
+        curr_hash = curr_hash << 2;
+        rc_hash = rc_hash >> 2;
+        rc_hash += hash::base_to_rc_val(sequence[(size_t)pos]) << (2 * KMER_SIZE);
+        rc_hash &= ~(uint64_t)3;
+        if (pos + 1 < s) continue;
+        int q = pos + 1 - s;
+        uint64_t fval = hash::get_smer_hash(s, k - s, curr_hash);
+        uint64_t rval = hash::get_smer_hash(s, 0, rc_hash);
+        while (fq.size() > f_head && fq.back().first > fval) fq.pop_back();
+        fq.emplace_back(fval, q);
+        while (rq.size() > r_head && rq.back().first >= rval) rq.pop_back();
+        rq.emplace_back(rval, q);
+        if (pos + 1 < k) continue;
+        int p = pos + 1 - k;
+        while (fq[f_head].second < p) f_head++;
+        while (rq[r_head].second < p) r_head++;
+        bool fwd_sync = (fq[f_head].second == p) || (fq[f_head].second == p + k - s);
+        bool rc_sync = (rq[r_head].second == p) || (rq[r_head].second == p + k - s);
+        if (fwd_sync || rc_sync){
+            bool took_reverse = rc_hash < curr_hash;
+            kmer_list.push_back(took_reverse ? rc_hash : curr_hash);
+            flipped_list.push_back(took_reverse);
+            unique_seq_len.push_back(pos + 1 - prev_pos);
+            prev_pos = pos + 1;
+            indices.push_back(p);
+        }
+        if (f_head > 1024){
+            fq.erase(fq.begin(), fq.begin() + (long)f_head);
+            f_head = 0;
+        }
+        if (r_head > 1024){
+            rq.erase(rq.begin(), rq.begin() + (long)r_head);
+            r_head = 0;
+        }
     }
 }
 bool syncmer::next_syncmer(int k, int s, std::string& seq, int& pos_next, uint64_t&hash, uint64_t& rc_hash){

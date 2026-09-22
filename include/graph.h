@@ -12,6 +12,9 @@
 #include <ankerl/unordered_dense.h>
 #include <vector>
 
+// prevent erroneous "correction" of large blocks
+const long MAX_CORRECTION_LEN_DIFF = 100;
+
 // corresponds to a part of an input sequence that is not found in the cleaned graph
 // i.e., this part was probably dropped because of an error
 // so we will fix it
@@ -50,6 +53,7 @@ class Graph {
         Node* increment_k_min_mer_count(int increment, bool is_read, KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx);
         void increment_unitig(int increment, Unitig* to_increment);
         int k_plus_one_mer_count(Span<uint64_t>& k_syncmer);
+        void sub_syncmer_counts(SketchedSeq& seq, std::vector<int>& out);
         void destroy_unitig(Unitig* to_remove);
         void destroy_node(Node* to_remove);
         void add_node_to_list(Node* new_node);

@@ -78,6 +78,22 @@ void Unitig::add_node_back(Node* to_add){
     this->nodes.push_back(to_add);
 }
 
+void Unitig::prepend_nodes(const std::vector<Node*>& to_add, bool reversed){
+    if (reversed){
+        this->nodes.insert(this->nodes.begin(), to_add.rbegin(), to_add.rend());
+    }else{
+        this->nodes.insert(this->nodes.begin(), to_add.begin(), to_add.end());
+    }
+}
+
+void Unitig::append_nodes(const std::vector<Node*>& to_add, bool reversed){
+    if (reversed){
+        this->nodes.insert(this->nodes.end(), to_add.rbegin(), to_add.rend());
+    }else{
+        this->nodes.insert(this->nodes.end(), to_add.begin(), to_add.end());
+    }
+}
+
 bool Unitig::contains_node(Node* check){
     for (size_t i{0}; i < this->nodes.size(); i++){
         if (this->nodes[i]->get_node_id() == check->get_node_id()){
@@ -93,15 +109,17 @@ void Unitig::clear_nodes(){
 
 void Unitig::drain_nodes(std::vector<Node*>& recipient, Node* breakpoint){
     assert(this->nodes.front() != breakpoint);
-    while (this->nodes.front() != breakpoint){
-        recipient.push_back(this->nodes.front());
-        this->nodes.erase(this->nodes.begin());
+    size_t split_idx {0};
+    while (this->nodes[split_idx] != breakpoint){
+        recipient.push_back(this->nodes[split_idx]);
+        split_idx++;
     }
+    this->nodes.erase(this->nodes.begin(), this->nodes.begin() + (long)split_idx);
     // figure out whether the breakpoint should be popped into the new unitig (depends on direction of the edge that was just added)
     int num_forward {0};
     char prev_dir = 'X';
 
-    const std::vector<Edge> neighs = breakpoint->view_neighbors();
+    const std::vector<Edge>& neighs = breakpoint->view_neighbors();
     for (size_t i{0}; i < neighs.size(); i++){
         if (neighs[i].neighbor == recipient.back()){
             prev_dir = neighs[i].self_orientation;
@@ -182,7 +200,8 @@ bool Unitig::connects_bubbles(){
 }
 
 void Unitig::update_median_freq(){
-    std::vector<int> counts;
+    static thread_local std::vector<int> counts;
+    counts.clear();
     counts.reserve(this->nodes.size());
     for (size_t i{0}; i < this->num_nodes(); i++){
         counts.push_back(this->nodes[i]->get_count());
@@ -276,7 +295,7 @@ char Unitig::get_in_dir(Node* to_check){
         return INVALID_ORIENTATION;
     }
     assert(node_is_endpoint(to_check));
-    const std::vector<Edge> neighs = to_check->view_neighbors();
+    const std::vector<Edge>& neighs = to_check->view_neighbors();
     for (size_t i{0}; i < neighs.size(); i++){
         if (neighs[i].neighbor->get_unitig() == to_check->get_unitig()){
             return neighs[i].self_orientation;
@@ -341,12 +360,12 @@ int Unitig::get_component(){
 
 void Unitig::set_parallel_utg(){
     std::vector<Unitig*> parallel_utgs;
-    const std::vector<Edge> front_neighs = this->get_front()->view_neighbors();
-    const std::vector<Edge> back_neighs = this->get_back()->view_neighbors();
+    const std::vector<Edge>& front_neighs = this->get_front()->view_neighbors();
+    const std::vector<Edge>& back_neighs = this->get_back()->view_neighbors();
     for (size_t i{0}; i < front_neighs.size(); i++){
         Node* neigh = front_neighs[i].neighbor;
         // get the direction of connection to unitig's front
-        const std::vector<Edge> fnns = neigh->view_neighbors();
+        const std::vector<Edge>& fnns = neigh->view_neighbors();
         char check_dir = INVALID_ORIENTATION;
         for (size_t j{0}; j < fnns.size(); j++){
             if (fnns[j].neighbor == this->get_front()){
@@ -380,7 +399,7 @@ void Unitig::set_parallel_utg(){
         for (size_t i{0}; i < back_neighs.size(); i++){
             Node* neigh = back_neighs[i].neighbor;
             if (neigh->get_unitig() == this) continue;
-            const std::vector<Edge> bnns = neigh->view_neighbors();
+            const std::vector<Edge>& bnns = neigh->view_neighbors();
             char check_dir = INVALID_ORIENTATION;
             for (size_t j{0}; j < bnns.size(); j++){
                 if (bnns[j].neighbor == this->get_back()){
