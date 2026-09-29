@@ -6,14 +6,21 @@
 #include <fstream>
 #include <iostream>
 
-struct AlignedSegment{
-    int length;
+// one placement of read segment on a unitig
+struct SegmentTarget{
     int utg_num;
     int utg_pos;
-    int read_pos;
     bool forward;
 
-    AlignedSegment(int l, int u_n, int u_p, int r_p, bool f) : length(l), utg_num(u_n), utg_pos(u_p), read_pos(r_p), forward(f) {}
+    SegmentTarget(int u_n, int u_p, bool f) : utg_num(u_n), utg_pos(u_p), forward(f) {}
+};
+
+struct AlignedSegment{
+    int length;
+    int read_pos;
+    std::vector<SegmentTarget> targets;
+
+    AlignedSegment(int l, int r_p) : length(l), read_pos(r_p), targets() {}
 };
 
 bool compareAlignedSegment(const AlignedSegment& a, const AlignedSegment& b){
@@ -50,7 +57,7 @@ void hpc::align_single_read(std::vector<uint64_t>& kmer_list, ankerl::unordered_
         uint64_t curr_kmer = kmer_list[i];
         // check the matches to the utg sequences
         if (kmer_index[curr_kmer].size() > 0){
-            AlignedSegment longest_segment(-1, -1, -1, -1, false);
+            AlignedSegment longest_segment(-1, kmer_indices[i]);
             size_t longest_match_len {1};
             // check each hit to see if there is a large segment that matches
             // we can assume this kmer is the start of the match or else it would have already been added with a previous segment
@@ -69,7 +76,12 @@ void hpc::align_single_read(std::vector<uint64_t>& kmer_list, ankerl::unordered_
                     int length = kmer_indices[(size_t)i + match_len - 1] + KMER_SIZE - kmer_indices[(size_t)i];
                     assert(length > 0);
                     longest_match_len = match_len;
-                    longest_segment = AlignedSegment(length, hit.seq_num, hit.seq_pos, kmer_indices[i], use_forward);
+                    longest_segment.length = length;
+                    longest_segment.targets.clear();
+                    longest_segment.targets.emplace_back(hit.seq_num, hit.seq_pos, use_forward);
+                }else if (match_len == longest_match_len && !longest_segment.targets.empty()){
+                    // read matches equally well at multiple places, so store all
+                    longest_segment.targets.emplace_back(hit.seq_num, hit.seq_pos, use_forward);
                 }
             }
             if (longest_match_len > 30){
@@ -99,7 +111,9 @@ void hpc::align_single_read(std::vector<uint64_t>& kmer_list, ankerl::unordered_
             int read_start = alignments[i].read_pos;
             int read_end = read_start + alignments[i].length - 1;
             if (query_intervals == NULL || !IntervalTree::overlap_search(query_intervals, read_start, read_end)){
-                hpc::add_to_hpc_tally(hp_lengths, hpc_tallies[(size_t)alignments[i].utg_num], alignments[i].utg_pos, alignments[i].read_pos, alignments[i].length, alignments[i].forward);
+                for (const SegmentTarget& target : alignments[i].targets){
+                    hpc::add_to_hpc_tally(hp_lengths, hpc_tallies[(size_t)target.utg_num], target.utg_pos, alignments[i].read_pos, alignments[i].length, target.forward);
+                }
                 IntervalTree::insert(query_intervals, read_start, read_end);
             }
         }

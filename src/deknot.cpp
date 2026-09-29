@@ -119,7 +119,7 @@ static dk_graph_t* dk_assemble_core(dk_opt_t* opt, char** reads_arr, char** read
             std::cout << curr_graph->num_nodes() << " nodes after compaction" << std::endl;
             std::cout << curr_graph->num_unitigs() << " unitigs after compaction" << std::endl;
         }
-        curr_graph->trim_tips();
+        curr_graph->trim_tips((float)opt->compact_thresh);
         curr_graph->add_unitigs_to_input(input_seqs, opt->s);
         if (prev_graph != NULL){
             delete prev_graph;
@@ -136,7 +136,7 @@ static dk_graph_t* dk_assemble_core(dk_opt_t* opt, char** reads_arr, char** read
         delete curr_graph;
         return NULL;
     }
-    prev_graph->trim_tips();
+    prev_graph->trim_tips((float)opt->compact_thresh);
     if(prev_graph->get_largest_component() == -1){
         prev_graph->identify_connected_components();
     }

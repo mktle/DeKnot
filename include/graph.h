@@ -61,7 +61,7 @@ class Graph {
         void create_unitig_for_node(Node* node);
 
         bool check_cross_pattern(Unitig* to_check);
-        void trim_tips();
+        void trim_tips(float abs_cap);
         void remove_floaters(int threshold);
         bool trim_low_freq_unitigs(int threshold, bool check_dinuc, bool check_strand, bool verbose);
         bool trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>& sorted_list, bool check_dinuc, bool check_strand, bool verbose);

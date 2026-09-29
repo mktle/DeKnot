@@ -806,7 +806,7 @@ bool Graph::check_cross_pattern(Unitig* to_check){
     return true;
 }
 
-void Graph::trim_tips(){
+void Graph::trim_tips(float abs_cap){
     bool changed = true;
     while(changed){
         changed = false;
@@ -831,7 +831,7 @@ void Graph::trim_tips(){
             if (inner_end != NULL){
                 assert(keep_node != NULL);
                 Unitig* keep_utg = keep_node->get_unitig();
-                if (utg->get_median_freq() < 0.5 * keep_utg->get_median_freq() && utg->num_nodes() < std::max(500, 3 * this->get_k_prime())){
+                if (utg->get_median_freq() < 0.5 * keep_utg->get_median_freq() && utg->num_nodes() < std::max(500, 3 * this->get_k_prime()) && (abs_cap < 0 || utg->get_median_freq() < abs_cap)){
                     changed = true;
                     this->disconnect_unitig_end(inner_end, keep_utg, sorted_unitigs);
                     this->destroy_unitig(utg);
