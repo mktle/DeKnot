@@ -925,7 +925,8 @@ bool Graph::trim_low_freq_end(Node* node_end, float thresh, std::vector<Unitig*>
     }
     // compacted no neighbors based on frequency, so check for branching dinucleotide site
     // and make sure it isn't a main bubble (true variation at a dinuc site)
-    if (check_dinuc && num_checked == 2 && node_end->get_unitig()->num_nodes() > 1 && node_end->end_is_dinucleotide() && this->dinuc_topology(node_end, lower_utg)){
+    bool short_branch = lower_utg != NULL && (float)lower_utg->num_nodes() <= DINUC_MAX_BRANCH_FRAC * (float)this->get_k_prime();
+    if (check_dinuc && short_branch && num_checked == 2 && node_end->get_unitig()->num_nodes() > 1 && node_end->end_is_dinucleotide() && this->dinuc_topology(node_end, lower_utg)){
         if(verbose) std::cout << "Dropping based on dinucleotide criteria (utg " << lower_utg->get_id() << " dropped during check on utg" << curr_utg->get_id() << ")" << std::endl;
         this->drop_unitig(sorted_list, node_end, lower_utg);
         assert(lower_utg != NULL);

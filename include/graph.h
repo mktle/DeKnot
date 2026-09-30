@@ -15,6 +15,8 @@
 // prevent erroneous "correction" of large blocks
 const long MAX_CORRECTION_LEN_DIFF = 100;
 
+const float DINUC_MAX_BRANCH_FRAC = 0.35f;
+
 // corresponds to a part of an input sequence that is not found in the cleaned graph
 // i.e., this part was probably dropped because of an error
 // so we will fix it
