@@ -9,7 +9,6 @@
 #include <cmath>
 #include <iostream>
 #include <fstream>
-#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -43,8 +42,8 @@ static dk_graph_t* dk_assemble_core(dk_opt_t* opt, char** reads_arr, char** read
     /************************************************************
      * Initialization (convert to C++ structures, sketch reads) *
      ************************************************************/
-    static std::once_flag dinuc_init_flag;
-    std::call_once(dinuc_init_flag, hash::initialize_dinucleotide_hashes);
+    static const bool dinuc_initialized = (hash::initialize_dinucleotide_hashes(), true);
+    (void)dinuc_initialized;
     std::vector<std::string> reads;
     std::vector<std::string> names;
     for (int i{0}; i < n_reads; i++){
