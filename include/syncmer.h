@@ -33,7 +33,18 @@ namespace syncmer{
     void get_all_syncmers(std::string& sequence, int s, std::vector<uint64_t>& kmer_list, std::vector<uint8_t>& flipped_list, std::vector<int>& unique_seq_len, std::vector<int>& indices);
     bool next_syncmer(int k, int s, std::string& seq, int& pos_next, uint64_t&hash, uint64_t& rc_hash);
     bool hash_is_syncmer(int k, int s, uint64_t hash);
-    char canonical_syncmer(Span<uint64_t>& to_check);
+    inline char canonical_syncmer(Span<uint64_t>& to_check){
+        size_t start {0};
+        size_t end {to_check.size() - 1};
+        while (to_check[start] == to_check[end] && (start < end - 1)){
+            start++;
+            end--;
+        }
+        if (to_check[start] >= to_check[end]){
+            return REVERSE_ORIENTATION;
+        }
+        return FORWARD_ORIENTATION;
+    }
 }
 
 #endif

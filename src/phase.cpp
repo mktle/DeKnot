@@ -159,7 +159,7 @@ bool phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_
             // navigate to first
             Unitig* start_utg = other_endpoints[other_endpoints.size() - 1];
             Node* first_node = start_utg->get_front()->neighbors_diff_utg() ? start_utg->get_front() : start_utg->get_back();
-            const std::vector<Edge>& neighs = first_node->view_neighbors();
+            const EdgeList& neighs = first_node->view_neighbors();
             start_node = NULL;
             for (size_t j{0}; j < neighs.size(); j++){
                 Node* neigh = neighs[j].neighbor;
@@ -204,7 +204,7 @@ void phase::build_walk(Walk& walk, Node* start_node, int hap_num){
             walk.num_hap_nodes += add_utg->num_nodes();
         }
         Node* opp_node = add_utg->opposite_end(curr);
-        const std::vector<Edge>& opp_neighbors = opp_node->view_neighbors();
+        const EdgeList& opp_neighbors = opp_node->view_neighbors();
         std::vector<Node*> hap_neighs;
         std::vector<Node*> other_neighs;
         // find neighbor haplotype assignments
@@ -250,7 +250,7 @@ int phase::lookahead_score(Node* to_add, int hap_num, int& budget){
     int hap_weight = (add_utg->get_assignment() == hap_num || add_utg->get_assignment() == HOM) ? add_utg->num_nodes() : 0;
 
     Node* opp_node = add_utg->opposite_end(to_add);
-    const std::vector<Edge>& opp_neighbors = opp_node->view_neighbors();
+    const EdgeList& opp_neighbors = opp_node->view_neighbors();
     std::vector<Node*> hap_neighs;
     std::vector<Node*> other_neighs;
     // find neighbor haplotype assignments

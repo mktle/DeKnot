@@ -18,39 +18,91 @@ struct Edge{
     char self_orientation;
     char neighbor_orientation;
 
+    Edge() : neighbor(NULL), self_orientation(0), neighbor_orientation(0) {}
     Edge(Node* neigh, char self_o, char n_o): neighbor(neigh), self_orientation(self_o), neighbor_orientation(n_o) {}
+};
+
+class EdgeList{
+    public:
+        static constexpr unsigned INLINE_CAP = 3;
+        using iterator = Edge*;
+        using const_iterator = const Edge*;
+
+        EdgeList() : n(0), cap(INLINE_CAP), heap(NULL) {}
+        ~EdgeList() { delete[] this->heap; }
+        EdgeList(const EdgeList&) = delete;
+        EdgeList& operator=(const EdgeList&) = delete;
+
+        size_t size() const { return this->n; }
+        bool empty() const { return this->n == 0; }
+        Edge& operator[](size_t i) { return this->data()[i]; }
+        const Edge& operator[](size_t i) const { return this->data()[i]; }
+        iterator begin() { return this->data(); }
+        iterator end() { return this->data() + this->n; }
+        const_iterator begin() const { return this->data(); }
+        const_iterator end() const { return this->data() + this->n; }
+        void clear() { this->n = 0; }
+        void emplace_back(Node* neigh, char self_o, char n_o){
+            if (this->n == this->cap) this->grow();
+            this->data()[this->n] = Edge(neigh, self_o, n_o);
+            this->n++;
+        }
+        iterator erase(iterator pos){
+            for (Edge* p = pos; p + 1 < this->end(); p++) *p = *(p + 1);
+            this->n--;
+            return pos;
+        }
+        std::vector<Edge> to_vector() const { return std::vector<Edge>(this->begin(), this->end()); }
+
+    private:
+        Edge inl[INLINE_CAP];
+        unsigned n;
+        unsigned cap;
+        Edge* heap;
+
+        Edge* data() { return this->heap != NULL ? this->heap : this->inl; }
+        const Edge* data() const { return this->heap != NULL ? this->heap : this->inl; }
+        void grow(){
+            unsigned new_cap = this->cap * 2;
+            Edge* grown = new Edge[new_cap];
+            for (unsigned i{0}; i < this->n; i++) grown[i] = this->data()[i];
+            delete[] this->heap;
+            this->heap = grown;
+            this->cap = new_cap;
+        }
 };
 
 class Node{
     public:
         Node(KmerView& set_ksyncmer, Span<uint8_t>& set_flipped, Span<int>& set_unique_len, int set_node, Unitig* set_unitig);
+        void reset(KmerView& set_ksyncmer, Span<uint8_t>& set_flipped, Span<int>& set_unique_len, int set_node, Unitig* set_unitig);
         void set_count(int n);
         void add_neighbor(Node* new_neighbor, char curr_orient, char neigh_orient);
         void remove_neighbor(Node* remove_neighbor);
         int num_edges_in_dir(char check_dir);
         void assign_unitig(Unitig* new_ptr);
-        bool is_assigned_to_unitig();
+        bool is_assigned_to_unitig() { return this->utg_ptr != NULL; }
         bool is_neighbors_with(Node* to_check);
         uint64_t unique_kmer_from_neigh(Node* neigh, bool& flipped, int& unique_seq_len);
-        int num_neighbors();
-        int num_kmers();
-        int get_node_id();
-        int get_count();
+        int num_neighbors() { return (int)this->neighbors.size(); }
+        int num_kmers() { return (int)this->ksyncmer.kmers.size(); }
+        int get_node_id() { return this->node_idx; }
+        int get_count() { return this->count; }
         void add_strand_obs(bool flipped, int inc);
         int get_strand_count(bool flipped);
         int minority_strand_count();
         uint64_t ith_kmer(int i);
         bool ith_kmer_flipped(int i);
         int ith_unique_seq_len(int i);
-        Unitig* get_unitig();
-        KmerView get_kmer_view();
+        Unitig* get_unitig() { return this->utg_ptr; }
+        KmerView get_kmer_view() { return this->ksyncmer; }
         uint64_t get_front_hash();
         uint64_t get_back_hash();
         bool neighbors_diff_utg();
         Node* get_diff_unitig_neighbor();
         Node* get_parallel_neigh(Unitig* in_utg);
         int longest_neighbor_utg_length();
-        const std::vector<Edge>& view_neighbors();
+        const EdgeList& view_neighbors() { return this->neighbors; }
         bool is_tip();
         void get_hpc_sequence(std::string& ret_str, bool reverse);
         bool end_is_dinucleotide();
@@ -63,7 +115,7 @@ class Node{
         Span<uint8_t> flip_kmer;
         Span<int> unique_seq_len;
 
-        std::vector<Edge> neighbors;
+        EdgeList neighbors;
 
         // frequency of this node
         int count;

@@ -404,6 +404,9 @@ bool construct_graph(int k_prime, int max_k_prime, std::vector<SketchedSeq*>& pr
         if (k_prime > max_k_prime) k_prime = max_k_prime;
     }
     dbg->set_k_prime(k_prime);
+    if (prev_graph != NULL){
+        dbg->reserve_nodes((size_t)prev_graph->num_nodes() + (size_t)prev_graph->num_nodes() / 8);
+    }
 
     for (size_t i{0}; i < corrected_seqs.size(); i++){
         input_sequences.emplace_back(corrected_seqs[i]);

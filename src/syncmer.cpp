@@ -49,33 +49,43 @@ void syncmer::get_all_syncmers(std::string& sequence, int s, std::vector<uint64_
     const int k {KMER_SIZE};
     uint64_t curr_hash {0};
     uint64_t rc_hash {0};
-    static thread_local std::vector<std::pair<uint64_t, int>> fq;
-    static thread_local std::vector<std::pair<uint64_t, int>> rq;
-    fq.clear();
-    rq.clear();
+    constexpr size_t RING = 64;
+    constexpr size_t RMASK = RING - 1;
+    uint64_t fv[RING];
+    int fp[RING];
+    uint64_t rv[RING];
+    int rp[RING];
     size_t f_head {0};
+    size_t f_tail {0};
     size_t r_head {0};
+    size_t r_tail {0};
     int prev_pos {0};
-    for (int pos{0}; pos < (int)sequence.size(); pos++){
-        curr_hash += hash::base_to_val(sequence[(size_t)pos]);
+    const size_t n = sequence.size();
+    const char* seq = sequence.data();
+    for (int pos{0}; pos < (int)n; pos++){
+        curr_hash += hash::base_to_val(seq[(size_t)pos]);
         curr_hash = curr_hash << 2;
         rc_hash = rc_hash >> 2;
-        rc_hash += hash::base_to_rc_val(sequence[(size_t)pos]) << (2 * KMER_SIZE);
+        rc_hash += hash::base_to_rc_val(seq[(size_t)pos]) << (2 * KMER_SIZE);
         rc_hash &= ~(uint64_t)3;
         if (pos + 1 < s) continue;
         int q = pos + 1 - s;
         uint64_t fval = hash::get_smer_hash(s, k - s, curr_hash);
         uint64_t rval = hash::get_smer_hash(s, 0, rc_hash);
-        while (fq.size() > f_head && fq.back().first > fval) fq.pop_back();
-        fq.emplace_back(fval, q);
-        while (rq.size() > r_head && rq.back().first >= rval) rq.pop_back();
-        rq.emplace_back(rval, q);
+        while (f_tail > f_head && fv[(f_tail - 1) & RMASK] > fval) f_tail--;
+        fv[f_tail & RMASK] = fval;
+        fp[f_tail & RMASK] = q;
+        f_tail++;
+        while (r_tail > r_head && rv[(r_tail - 1) & RMASK] >= rval) r_tail--;
+        rv[r_tail & RMASK] = rval;
+        rp[r_tail & RMASK] = q;
+        r_tail++;
         if (pos + 1 < k) continue;
         int p = pos + 1 - k;
-        while (fq[f_head].second < p) f_head++;
-        while (rq[r_head].second < p) r_head++;
-        bool fwd_sync = (fq[f_head].second == p) || (fq[f_head].second == p + k - s);
-        bool rc_sync = (rq[r_head].second == p) || (rq[r_head].second == p + k - s);
+        while (fp[f_head & RMASK] < p) f_head++;
+        while (rp[r_head & RMASK] < p) r_head++;
+        bool fwd_sync = (fp[f_head & RMASK] == p) || (fp[f_head & RMASK] == p + k - s);
+        bool rc_sync = (rp[r_head & RMASK] == p) || (rp[r_head & RMASK] == p + k - s);
         if (fwd_sync || rc_sync){
             bool took_reverse = rc_hash < curr_hash;
             kmer_list.push_back(took_reverse ? rc_hash : curr_hash);
@@ -83,14 +93,6 @@ void syncmer::get_all_syncmers(std::string& sequence, int s, std::vector<uint64_
             unique_seq_len.push_back(pos + 1 - prev_pos);
             prev_pos = pos + 1;
             indices.push_back(p);
-        }
-        if (f_head > 1024){
-            fq.erase(fq.begin(), fq.begin() + (long)f_head);
-            f_head = 0;
-        }
-        if (r_head > 1024){
-            rq.erase(rq.begin(), rq.begin() + (long)r_head);
-            r_head = 0;
         }
     }
 }
@@ -128,17 +130,3 @@ bool syncmer::hash_is_syncmer(int k, int s, uint64_t hash){
 }
 
 // returns whether the canonical k-min-mer is the reverse of the current representation
-char syncmer::canonical_syncmer(Span<uint64_t>& to_check){
-    assert(to_check.size() > 1);
-    size_t start {0};
-    size_t end {to_check.size() - 1};
-    // break ties by checking next kmers
-    while (to_check[start] == to_check[end] && (start < end - 1)){
-        start++;
-        end--;
-    }
-    if (to_check[start] >= to_check[end]){
-        return REVERSE_ORIENTATION;
-    }
-    return FORWARD_ORIENTATION;
-}

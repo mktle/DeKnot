@@ -14,6 +14,20 @@ Node::Node(KmerView& set_ksyncmer, Span<uint8_t>& set_flipped, Span<int>& set_un
     this->num_reverse_edges = 0;
 }
 
+void Node::reset(KmerView& set_ksyncmer, Span<uint8_t>& set_flipped, Span<int>& set_unique_len, int set_node, Unitig* set_unitig){
+    this->ksyncmer = set_ksyncmer;
+    this->flip_kmer = set_flipped;
+    this->unique_seq_len = set_unique_len;
+    this->neighbors.clear();
+    this->node_idx = set_node;
+    this->utg_ptr = set_unitig;
+    this->count = 1;
+    this->strand_counts[0] = 0;
+    this->strand_counts[1] = 0;
+    this->num_forward_edges = 0;
+    this->num_reverse_edges = 0;
+}
+
 void Node::set_count(int n){
     this->count = n;
 }
@@ -60,10 +74,6 @@ void Node::assign_unitig(Unitig* new_ptr) {
     this->utg_ptr = new_ptr;
 }
 
-bool Node::is_assigned_to_unitig() {
-    return this->utg_ptr != NULL;
-}
-
 bool Node::is_neighbors_with(Node* to_check){
     for (int i{0}; i < this->neighbors.size(); i++){
         if (this->neighbors[(size_t)i].neighbor == to_check){
@@ -88,26 +98,6 @@ uint64_t Node::unique_kmer_from_neigh(Node* neigh, bool& flipped, int& unique_se
     }
     assert(0);
     return 0;
-}
-
-int Node::num_kmers(){
-    return (int)this->ksyncmer.kmers.size();
-}
-
-int Node::num_neighbors(){
-    return (int)this->neighbors.size();
-}
-
-int Node::get_node_id(){
-    return this->node_idx;
-}
-
-Unitig* Node::get_unitig(){
-    return this->utg_ptr;
-}
-
-int Node::get_count(){
-    return this->count;
 }
 
 void Node::add_strand_obs(bool flipped, int inc){
@@ -196,14 +186,6 @@ int Node::longest_neighbor_utg_length(){
         }
     }
     return longest_length;
-}
-
-KmerView Node::get_kmer_view(){
-    return this->ksyncmer;
-}
-
-const std::vector<Edge>& Node::view_neighbors(){
-    return this->neighbors;
 }
 
 bool Node::is_tip(){

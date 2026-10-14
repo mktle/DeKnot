@@ -7,8 +7,25 @@
 #include <iostream>
 
 Unitig::Unitig(std::vector<Node*>& set_nodes, int index){
+    this->reset(set_nodes, index);
+}
+
+void Unitig::reset(Node* single_node, int index){
+    this->nodes.clear();
+    this->nodes.push_back(single_node);
+    this->init_fields(index);
+}
+
+void Unitig::reset(std::vector<Node*>& set_nodes, int index){
     // deliberately copy
     this->nodes = set_nodes;
+    this->init_fields(index);
+}
+
+void Unitig::init_fields(int index){
+    this->aligned_seqs.clear();
+    this->component = 0;
+    this->hap_updated = false;
     this->index = index;
     this->base_freq = 0;
     this->update_median_freq();
@@ -38,32 +55,12 @@ bool Unitig::node_is_endpoint(Node* to_check){
     return (this->nodes.front()->get_node_id() == to_check->get_node_id() || this->nodes.back()->get_node_id() == to_check->get_node_id());
 }
 
-int Unitig::num_nodes(){
-    return (int)this->nodes.size();
-}
-
-Node* Unitig::get_front(){
-    return this->nodes.front();
-}
-
-Node* Unitig::get_back(){
-    return this->nodes.back();
-}
-
 Node* Unitig::opposite_end(Node* in_end){
     if (in_end == this->nodes.back()){
         return this->nodes.front();
     }
     assert(in_end == this->nodes.front());
     return this->nodes.back();
-}
-
-int Unitig::get_id(){
-    return this->index;
-}
-
-const std::vector<Node*>& Unitig::view_nodes(){
-    return this->nodes;
 }
 
 Node* Unitig::node_at(size_t idx){
@@ -78,7 +75,7 @@ void Unitig::add_node_back(Node* to_add){
     this->nodes.push_back(to_add);
 }
 
-void Unitig::prepend_nodes(const std::vector<Node*>& to_add, bool reversed){
+void Unitig::prepend_nodes(const NodeBuf& to_add, bool reversed){
     if (reversed){
         this->nodes.insert(this->nodes.begin(), to_add.rbegin(), to_add.rend());
     }else{
@@ -86,7 +83,7 @@ void Unitig::prepend_nodes(const std::vector<Node*>& to_add, bool reversed){
     }
 }
 
-void Unitig::append_nodes(const std::vector<Node*>& to_add, bool reversed){
+void Unitig::append_nodes(const NodeBuf& to_add, bool reversed){
     if (reversed){
         this->nodes.insert(this->nodes.end(), to_add.rbegin(), to_add.rend());
     }else{
@@ -119,7 +116,7 @@ void Unitig::drain_nodes(std::vector<Node*>& recipient, Node* breakpoint){
     int num_forward {0};
     char prev_dir = 'X';
 
-    const std::vector<Edge>& neighs = breakpoint->view_neighbors();
+    const EdgeList& neighs = breakpoint->view_neighbors();
     for (size_t i{0}; i < neighs.size(); i++){
         if (neighs[i].neighbor == recipient.back()){
             prev_dir = neighs[i].self_orientation;
@@ -145,10 +142,6 @@ Node* Unitig::pop_back(){
     Node* to_return = this->nodes.back();
     this->nodes.pop_back();
     return to_return;
-}
-
-float Unitig::get_median_freq(){
-    return this->median_freq + this->base_freq;
 }
 
 float Unitig::get_base_freq(){
@@ -200,6 +193,10 @@ bool Unitig::connects_bubbles(){
 }
 
 void Unitig::update_median_freq(){
+    if (this->nodes.size() == 1){
+        this->median_freq = (float)this->nodes[0]->get_count();
+        return;
+    }
     static thread_local std::vector<int> counts;
     counts.clear();
     counts.reserve(this->nodes.size());
@@ -233,7 +230,7 @@ Node* Unitig::get_tip_inner_end(Node*& adj_node){
     if (this->get_front()->is_tip()){
         // front doesn't have any other neighbors, so check the back's neighbor
         if (this->get_back()->num_neighbors() == 2 || (this->get_front() == this->get_back() && this->get_back()->num_neighbors() == 1)){
-            const std::vector<Edge>& neighbors = this->get_back()->view_neighbors();
+            const EdgeList& neighbors = this->get_back()->view_neighbors();
             for (size_t i{0}; i < neighbors.size(); i++){
                 Node* neigh = neighbors[i].neighbor;
                 // get the neighbor on the different unitig
@@ -242,7 +239,7 @@ Node* Unitig::get_tip_inner_end(Node*& adj_node){
                     if (neigh->num_edges_in_dir(utils::reverse_orientation(neighbors[i].neighbor_orientation)) > 1){
                         // check if parallel utg continues with more neighbors
                         // so first get the parallel utg
-                        const std::vector<Edge>& neigh_neighbors = neigh->view_neighbors();
+                        const EdgeList& neigh_neighbors = neigh->view_neighbors();
                         for (size_t j{0}; j < neigh_neighbors.size(); j++){
                             Node* neigh_neigh = neigh_neighbors[j].neighbor;
                             Unitig* nn_utg = neigh_neigh->get_unitig();
@@ -261,7 +258,7 @@ Node* Unitig::get_tip_inner_end(Node*& adj_node){
     }else if (this->get_back()->is_tip()){
         // back doesn't have any other neighbors, so check the front's neighbor
         if (this->get_front()->num_neighbors() == 2){
-            const std::vector<Edge>& neighbors = this->get_front()->view_neighbors();
+            const EdgeList& neighbors = this->get_front()->view_neighbors();
             for (size_t i{0}; i < neighbors.size(); i++){
                 Node* neigh = neighbors[i].neighbor;
                 // get the neighbor on the different unitig
@@ -270,7 +267,7 @@ Node* Unitig::get_tip_inner_end(Node*& adj_node){
                     if (neigh->num_edges_in_dir(utils::reverse_orientation(neighbors[i].neighbor_orientation)) > 1){
                         // check if parallel utg continues with more neighbors
                         // so first get the parallel utg
-                        const std::vector<Edge>& neigh_neighbors = neigh->view_neighbors();
+                        const EdgeList& neigh_neighbors = neigh->view_neighbors();
                         for (size_t j{0}; j < neigh_neighbors.size(); j++){
                             Node* neigh_neigh = neigh_neighbors[j].neighbor;
                             Unitig* nn_utg = neigh_neigh->get_unitig();
@@ -295,7 +292,7 @@ char Unitig::get_in_dir(Node* to_check){
         return INVALID_ORIENTATION;
     }
     assert(node_is_endpoint(to_check));
-    const std::vector<Edge>& neighs = to_check->view_neighbors();
+    const EdgeList& neighs = to_check->view_neighbors();
     for (size_t i{0}; i < neighs.size(); i++){
         if (neighs[i].neighbor->get_unitig() == to_check->get_unitig()){
             return neighs[i].self_orientation;
@@ -311,10 +308,6 @@ bool Unitig::is_neighbors_with(Unitig* check_utg){
             || this->get_back()->is_neighbors_with(check_utg->get_front())
             || this->get_back()->is_neighbors_with(check_utg->get_back())
             );
-}
-
-int Unitig::get_assignment(){
-    return this->assignment;
 }
 
 void Unitig::set_assignment(int id){
@@ -354,18 +347,14 @@ void Unitig::set_component(int id){
     this->component = id;
 }
 
-int Unitig::get_component(){
-    return this->component;
-}
-
 void Unitig::set_parallel_utg(){
     std::vector<Unitig*> parallel_utgs;
-    const std::vector<Edge>& front_neighs = this->get_front()->view_neighbors();
-    const std::vector<Edge>& back_neighs = this->get_back()->view_neighbors();
+    const EdgeList& front_neighs = this->get_front()->view_neighbors();
+    const EdgeList& back_neighs = this->get_back()->view_neighbors();
     for (size_t i{0}; i < front_neighs.size(); i++){
         Node* neigh = front_neighs[i].neighbor;
         // get the direction of connection to unitig's front
-        const std::vector<Edge>& fnns = neigh->view_neighbors();
+        const EdgeList& fnns = neigh->view_neighbors();
         char check_dir = INVALID_ORIENTATION;
         for (size_t j{0}; j < fnns.size(); j++){
             if (fnns[j].neighbor == this->get_front()){
@@ -399,7 +388,7 @@ void Unitig::set_parallel_utg(){
         for (size_t i{0}; i < back_neighs.size(); i++){
             Node* neigh = back_neighs[i].neighbor;
             if (neigh->get_unitig() == this) continue;
-            const std::vector<Edge>& bnns = neigh->view_neighbors();
+            const EdgeList& bnns = neigh->view_neighbors();
             char check_dir = INVALID_ORIENTATION;
             for (size_t j{0}; j < bnns.size(); j++){
                 if (bnns[j].neighbor == this->get_back()){
@@ -461,10 +450,6 @@ void Unitig::lock_haplotype(){
     this->locked = true;
 }
 
-bool Unitig::is_locked(){
-    return this->locked;
-}
-
 void Unitig::set_times_walked(int val){
     this->times_walked = val;
 }
@@ -492,6 +477,7 @@ void Unitig::list_nodes(){
 }
 
 void Unitig::get_hpc_sequence(std::string& ret_seq, bool reverse, bool append){
+    ret_seq.reserve(ret_seq.size() + this->nodes.size() * 12 + 64);
     if (this->nodes.size() == 1){
         assert(!append);
         this->get_front()->get_hpc_sequence(ret_seq, reverse);
@@ -501,7 +487,7 @@ void Unitig::get_hpc_sequence(std::string& ret_seq, bool reverse, bool append){
         char curr_direction = INVALID_ORIENTATION;
         char next_direction = INVALID_ORIENTATION;
         // figure out the direction to read the initial sequence
-        const std::vector<Edge>& neighbors = curr_node->view_neighbors();
+        const EdgeList& neighbors = curr_node->view_neighbors();
         // add the initial sequence
         if (!append){
             for (size_t i{0}; i < neighbors.size(); i++){
@@ -547,7 +533,7 @@ void Unitig::get_hpc_sequence(std::string& ret_seq, bool reverse, bool append){
                     char save_direction = next_direction;
                     next_direction = INVALID_ORIENTATION;
                     // figure out which node is the next one
-                    const std::vector<Edge>& curr_neighbors = curr_node->view_neighbors();
+                    const EdgeList& curr_neighbors = curr_node->view_neighbors();
                     for (size_t j{0}; j < curr_neighbors.size(); j++){
                         Node* neigh = curr_neighbors[j].neighbor;
                         if (neigh != this->nodes[i - 1] && neigh->get_unitig()->get_id() == curr_node->get_unitig()->get_id()){
@@ -577,7 +563,7 @@ void Unitig::get_hpc_sequence(std::string& ret_seq, bool reverse, bool append){
                     char save_direction = next_direction;
                     next_direction = INVALID_ORIENTATION;
                     // figure out which node is the next one
-                    const std::vector<Edge>& curr_neighbors = curr_node->view_neighbors();
+                    const EdgeList& curr_neighbors = curr_node->view_neighbors();
                     for (size_t j{0}; j < curr_neighbors.size(); j++){
                         Node* neigh = curr_neighbors[j].neighbor;
                         if (neigh != this->nodes[(size_t)i + 1] && neigh->get_unitig()->get_id() == curr_node->get_unitig()->get_id()){
@@ -605,7 +591,7 @@ void Unitig::print_kmers(){
     int k_prime = curr_node->num_kmers();
     char next_direction = INVALID_ORIENTATION;
     // figure out the direction to read the initial sequence
-    const std::vector<Edge>& neighbors = curr_node->view_neighbors();
+    const EdgeList& neighbors = curr_node->view_neighbors();
     for (size_t i{0}; i < neighbors.size(); i++){
         if (neighbors[i].neighbor->get_unitig()->get_id() == curr_node->get_unitig()->get_id()){
             next_direction = neighbors[i].neighbor_orientation;
@@ -634,7 +620,7 @@ void Unitig::print_kmers(){
             char save_direction = next_direction;
             next_direction = INVALID_ORIENTATION;
             // figure out which node is the next one
-            const std::vector<Edge>& curr_neighbors = curr_node->view_neighbors();
+            const EdgeList& curr_neighbors = curr_node->view_neighbors();
             for (size_t j{0}; j < curr_neighbors.size(); j++){
                 Node* neigh = curr_neighbors[j].neighbor;
                 if (neigh != this->nodes[i - 1] && neigh->get_unitig()->get_id() == curr_node->get_unitig()->get_id()){

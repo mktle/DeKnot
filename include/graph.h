@@ -3,6 +3,7 @@
 
 #include "deknot.h"
 #include "node.h"
+#include "node_table.h"
 #include "span.h"
 #include "syncmer.h"
 #include "unitig.h"
@@ -36,6 +37,7 @@ class Graph {
         ~Graph();
         int get_k_prime();
         void set_k_prime(int set_val);
+        void reserve_nodes(size_t n);
         int num_nodes();
         int num_unitigs();
         int min_connect_size();
@@ -52,7 +54,7 @@ class Graph {
         int next_node_id();
         int next_unitig_id();
 
-        Node* increment_k_min_mer_count(int increment, bool is_read, KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx);
+        Node* increment_k_min_mer_count(int increment, bool is_read, KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx, bool defer_unitig = false);
         void increment_unitig(int increment, Unitig* to_increment);
         int k_plus_one_mer_count(Span<uint64_t>& k_syncmer);
         void sub_syncmer_counts(SketchedSeq& seq, std::vector<int>& out);
@@ -111,8 +113,7 @@ class Graph {
         std::vector<int> node_free_list;
         std::vector<Unitig*> unitig_list;
         std::vector<int> unitig_free_list;
-
-        ankerl::unordered_dense::map<KmerView, Node*, utils::KmerViewHash, utils::KmerViewEqual> node_table;
+        NodeTable node_table;
 };
 
 #endif
