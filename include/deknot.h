@@ -25,6 +25,8 @@ typedef struct {
     const char* out_dir;
     // non-zero value to print logging statements
     int verbose;
+    // (bool) whether errors should be dropped based on strand evidence (e.g., ONT)
+    int check_strand;
 } dk_opt_t;
 
 /*********************************
@@ -44,6 +46,14 @@ typedef struct {
     int n_unitigs;
     int n_edges;
 } dk_graph_t;
+
+typedef struct {
+    // expanded (non-HPC) haplotype walk sequences
+    char** walks;
+    int n_walks;
+    // per input read (same order as reads_arr): 1/2 = haplotype, 0 = homozygous/unassigned
+    int* read_assignments;
+} dk_walks_t;
 
 /************************
  * Function definitions *
@@ -77,6 +87,25 @@ int dk_set_opt(const char* preset, dk_opt_t* opt);
  * @return              final assembly graph represented as a list of unitigs and a list of edges
  */
 dk_graph_t* dk_assemble_reads(dk_opt_t* opt, char** reads_arr, char** read_names, int n_reads);
+
+/**
+ * Assembles reads and returns the phased haplotype walks directly
+ *
+ * @param opt           assembly parameters
+ * @param reads_arr     input read sequences
+ * @param read_names    names corresponding to the reads (optional, can be NULL); must be unique when provided, since they are used to map haplotype assignments back to input order
+ * @param n_reads       number of reads in reads_arr
+ *
+ * @return              phased walks and per-read haplotype assignments (NULL on failure); free with dk_walks_free
+ */
+dk_walks_t* dk_assemble_walks(dk_opt_t* opt, char** reads_arr, char** read_names, int n_reads);
+
+/**
+ * Frees a dk_walks_t returned by dk_assemble_walks
+ *
+ * @param to_free       walks object to be freed
+ */
+void dk_walks_free(dk_walks_t* to_free);
 
 /**
  * Performs homopolymer expansion on compressed unitigs

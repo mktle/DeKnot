@@ -25,7 +25,6 @@ void syncmer::sketch_sequences(int s, std::vector<std::string>& reads, std::vect
 }
 
 SketchedSeq* syncmer::split_sequence(SketchedSeq* init_seq, size_t idx_first, size_t idx_second){
-    if(init_seq->name == "m84039_230117_233243_s1/56365526/ccsM") std::cout << "splitting" << std::endl;//mkl
     assert(idx_first > 0);
     assert(idx_second < init_seq->kmers.size() - 2);
     SketchedSeq* new_seq = new SketchedSeq(init_seq->name + "2", init_seq->is_read);
@@ -46,25 +45,55 @@ SketchedSeq* syncmer::split_sequence(SketchedSeq* init_seq, size_t idx_first, si
 }
 
 void syncmer::get_all_syncmers(std::string& sequence, int s, std::vector<uint64_t>& kmer_list, std::vector<uint8_t>& flipped_list, std::vector<int>& unique_seq_len, std::vector<int>& indices){
+    if (sequence.size() < (size_t)KMER_SIZE) return;
+    const int k {KMER_SIZE};
     uint64_t curr_hash {0};
     uint64_t rc_hash {0};
-    bool first_is_syncmer {false};
-    std::string start_kmer = sequence.substr(0, KMER_SIZE);
-    bool took_reverse = hash::hash_entire_kmer(curr_hash, rc_hash, start_kmer, s, first_is_syncmer);
-    int next_pos {KMER_SIZE};
-    if (!first_is_syncmer){
-        took_reverse = syncmer::next_syncmer(KMER_SIZE, s, sequence, next_pos, curr_hash, rc_hash);
-    }
+    constexpr size_t RING = 64;
+    constexpr size_t RMASK = RING - 1;
+    uint64_t fv[RING];
+    int fp[RING];
+    uint64_t rv[RING];
+    int rp[RING];
+    size_t f_head {0};
+    size_t f_tail {0};
+    size_t r_head {0};
+    size_t r_tail {0};
     int prev_pos {0};
-    //  index will be set to -1 when the hash function gets to the end of the sequence
-    while (next_pos != -1){
-        uint64_t hash = (took_reverse) ? rc_hash : curr_hash;
-        kmer_list.push_back(hash);
-        flipped_list.push_back(took_reverse);
-        unique_seq_len.push_back(next_pos - prev_pos);
-        prev_pos = next_pos;
-        indices.push_back(next_pos - KMER_SIZE);
-        took_reverse = syncmer::next_syncmer(KMER_SIZE, s, sequence, next_pos, curr_hash, rc_hash);
+    const size_t n = sequence.size();
+    const char* seq = sequence.data();
+    for (int pos{0}; pos < (int)n; pos++){
+        curr_hash += hash::base_to_val(seq[(size_t)pos]);
+        curr_hash = curr_hash << 2;
+        rc_hash = rc_hash >> 2;
+        rc_hash += hash::base_to_rc_val(seq[(size_t)pos]) << (2 * KMER_SIZE);
+        rc_hash &= ~(uint64_t)3;
+        if (pos + 1 < s) continue;
+        int q = pos + 1 - s;
+        uint64_t fval = hash::get_smer_hash(s, k - s, curr_hash);
+        uint64_t rval = hash::get_smer_hash(s, 0, rc_hash);
+        while (f_tail > f_head && fv[(f_tail - 1) & RMASK] > fval) f_tail--;
+        fv[f_tail & RMASK] = fval;
+        fp[f_tail & RMASK] = q;
+        f_tail++;
+        while (r_tail > r_head && rv[(r_tail - 1) & RMASK] >= rval) r_tail--;
+        rv[r_tail & RMASK] = rval;
+        rp[r_tail & RMASK] = q;
+        r_tail++;
+        if (pos + 1 < k) continue;
+        int p = pos + 1 - k;
+        while (fp[f_head & RMASK] < p) f_head++;
+        while (rp[r_head & RMASK] < p) r_head++;
+        bool fwd_sync = (fp[f_head & RMASK] == p) || (fp[f_head & RMASK] == p + k - s);
+        bool rc_sync = (rp[r_head & RMASK] == p) || (rp[r_head & RMASK] == p + k - s);
+        if (fwd_sync || rc_sync){
+            bool took_reverse = rc_hash < curr_hash;
+            kmer_list.push_back(took_reverse ? rc_hash : curr_hash);
+            flipped_list.push_back(took_reverse);
+            unique_seq_len.push_back(pos + 1 - prev_pos);
+            prev_pos = pos + 1;
+            indices.push_back(p);
+        }
     }
 }
 bool syncmer::next_syncmer(int k, int s, std::string& seq, int& pos_next, uint64_t&hash, uint64_t& rc_hash){
@@ -101,17 +130,3 @@ bool syncmer::hash_is_syncmer(int k, int s, uint64_t hash){
 }
 
 // returns whether the canonical k-min-mer is the reverse of the current representation
-char syncmer::canonical_syncmer(Span<uint64_t>& to_check){
-    assert(to_check.size() > 1);
-    size_t start {0};
-    size_t end {to_check.size() - 1};
-    // break ties by checking next kmers
-    while (to_check[start] == to_check[end] && (start < end - 1)){
-        start++;
-        end--;
-    }
-    if (to_check[start] >= to_check[end]){
-        return REVERSE_ORIENTATION;
-    }
-    return FORWARD_ORIENTATION;
-}

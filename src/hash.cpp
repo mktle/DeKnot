@@ -50,28 +50,19 @@ bool hash::hash_next(uint64_t& curr_hash, uint64_t& rc_hash, char next_char){
     return false;
 }
 
-uint64_t hash::get_smer_hash(int s, int pos, uint64_t hash){
-    // shift relevant smer to the least significant bits, then mask
-    return (hash >> static_cast<uint64_t>(2 * (32 - pos - s))) & ((uint64_t(1) << static_cast<uint64_t>(2 * s)) - 1);
+static uint64_t make_val_table(uint64_t a, uint64_t c, uint64_t g, uint64_t t, uint64_t* table){
+    for (int i{0}; i < 256; i++) table[i] = 4;
+    table[(unsigned char)'A'] = a;
+    table[(unsigned char)'C'] = c;
+    table[(unsigned char)'G'] = g;
+    table[(unsigned char)'T'] = t;
+    return 0;
 }
-
-uint64_t hash::base_to_val(char base){
-    if (base == 'A') return 0;
-    if (base == 'C') return 1;
-    if (base == 'G') return 2;
-    if (base == 'T') return 3;
-    assert(0);
-    return 4;
-}
-
-uint64_t hash::base_to_rc_val(char base){
-    if (base == 'A') return 3;
-    if (base == 'C') return 2;
-    if (base == 'G') return 1;
-    if (base == 'T') return 0;
-    assert(0);
-    return 4;
-}
+static uint64_t base_val_storage[256];
+static uint64_t base_rc_val_storage[256];
+static const uint64_t base_tables_init = make_val_table(0, 1, 2, 3, base_val_storage) + make_val_table(3, 2, 1, 0, base_rc_val_storage);
+const uint64_t* const hash::BASE_VAL = base_val_storage;
+const uint64_t* const hash::BASE_RC_VAL = base_rc_val_storage;
 
 void hash::hash_to_kmer(uint64_t hash, bool flipped, std::string& ret_string){
     ret_string = "";
@@ -92,22 +83,20 @@ void hash::hash_to_kmer(uint64_t hash, bool flipped, std::string& ret_string){
 }
 
 void hash::add_to_seq_from_hash(uint64_t hash, bool flipped, int len, std::string& ret_string){
+    char buf[64];
+    int n {0};
     if (flipped){
-        for (size_t i{0}; i < KMER_SIZE; i++){
-            hash = hash >> 2;
-            if (i >= KMER_SIZE - len){
-                uint64_t rc_val = ~hash;
-                rc_val = rc_val & 3;
-                ret_string += val_to_base[rc_val];
-            }
+        for (int i{KMER_SIZE - len}; i < KMER_SIZE; i++){
+            uint64_t rc_val = (~(hash >> (2 * (i + 1)))) & 3;
+            buf[n++] = val_to_base[rc_val];
         }
     }else{
         for (int i{KMER_SIZE - len}; i < KMER_SIZE; i++){
-            uint64_t curr_val = hash >> ( 2 * (KMER_SIZE - i));
-            curr_val &= 3;
-            ret_string += val_to_base[curr_val];
+            uint64_t curr_val = (hash >> (2 * (KMER_SIZE - i))) & 3;
+            buf[n++] = val_to_base[curr_val];
         }
     }
+    ret_string.append(buf, (size_t)n);
 }
 
 void hash::prepend_to_seq_from_hash(uint64_t hash, bool flipped, int len, std::string& ret_string){
