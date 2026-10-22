@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeKnot</title>
+<meta name="description" content="Assemble structural-variant loci from long reads, entirely in your browser.">
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1c1c1a; --muted: #6b6b66;
+    --line: #e2e2dd; --accent: #2d5be3; --accent-ink: #ffffff;
+    --ok: #1f7a3c; --err: #b3261e; --code-bg: #f1f1ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141414; --panel: #1d1d1d; --ink: #ececea; --muted: #a0a09a;
+      --line: #2e2e2c; --accent: #6f93ff; --accent-ink: #0d1430;
+      --ok: #5fcf85; --err: #ff7b72; --code-bg: #262625;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141414; --panel: #1d1d1d; --ink: #ececea; --muted: #a0a09a;
+    --line: #2e2e2c; --accent: #6f93ff; --accent-ink: #0d1430;
+    --ok: #5fcf85; --err: #ff7b72; --code-bg: #262625;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 2rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .tagline { color: var(--muted); margin: 0 0 24px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  .panel h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .drop {
+    border: 2px dashed var(--line); border-radius: 8px; padding: 28px 16px; text-align: center;
+    color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .drop.over, .drop:hover { border-color: var(--accent); }
+  .drop strong { color: var(--ink); }
+  .drop input { display: none; }
+  .file-name { margin-top: 10px; font-size: .95rem; }
+  .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px 20px; }
+  .params label { display: flex; flex-direction: column; font-size: .9rem; color: var(--muted); gap: 4px; }
+  .params input[type=number] {
+    font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 8px; width: 100%;
+  }
+  .params .check { flex-direction: row; align-items: center; gap: 8px; align-self: end; padding-bottom: 6px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: .95rem; }
+  details .params { margin-top: 12px; }
+  .actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
+  button {
+    font: inherit; border: 0; border-radius: 8px; padding: 10px 18px; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink); font-weight: 600;
+  }
+  button:disabled { opacity: .45; cursor: default; }
+  button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  .status { color: var(--muted); }
+  .status.ok { color: var(--ok); }
+  .status.err { color: var(--err); }
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; margin: 8px 0 12px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  pre.log {
+    background: var(--code-bg); border-radius: 8px; padding: 12px; max-height: 260px; overflow: auto;
+    font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 0; white-space: pre-wrap;
+  }
+  .hidden { display: none; }
+  .note { font-size: .9rem; color: var(--muted); }
+  .note code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: .85em; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>DeKnot</h1>
+  <p class="tagline">Local assembly of structural-variant loci from long reads. Runs entirely in your browser: reads never leave your computer.</p>
+
+  <section class="panel">
+    <h2>1. Reads</h2>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept=".fq,.fastq">
+      <div><strong>Choose a FASTQ</strong> or drop it here</div>
+      <div class="note">Uncompressed <code>.fq</code> / <code>.fastq</code> with the reads from one locus (typically 50 kb–500 kb).</div>
+    </label>
+    <div class="file-name" id="fileName"></div>
+    <details style="margin-top:12px">
+      <summary>How do I get the reads for one locus?</summary>
+      <p class="note" style="margin:8px 0 0">From an aligned BAM, for example:</p>
+      <pre class="log">samtools view -b aligned.bam chr1:1,000,000-1,100,000 | samtools fastq - &gt; locus.fq</pre>
+    </details>
+  </section>
+
+  <section class="panel">
+    <h2>2. Parameters</h2>
+    <div class="params">
+      <label>Syncmer s <input type="number" id="s" value="9" min="3" max="31"></label>
+      <label>Initial k′ <input type="number" id="kPrime" value="2" min="1"></label>
+      <label>Frequency threshold <input type="number" id="freqThresh" value="4" min="1"></label>
+      <label>Max iterations <input type="number" id="maxIterations" value="2000" min="1"></label>
+      <label class="check"><input type="checkbox" id="checkStrand"> Strand check (ONT)</label>
+      <label class="check"><input type="checkbox" id="verbose"> Verbose log</label>
+    </div>
+    <div class="actions">
+      <button id="run" disabled>Run DeKnot</button>
+      <button id="cancel" class="secondary hidden">Cancel</button>
+      <span class="status" id="status"></span>
+    </div>
+  </section>
+
+  <section class="panel hidden" id="results">
+    <h2>3. Results</h2>
+    <div id="summary"></div>
+    <table id="walksTable"><thead><tr><th>Walk</th><th class="num">Length (bp)</th></tr></thead><tbody></tbody></table>
+    <div class="actions" style="margin-top:0">
+      <button id="dlWalks">Download walks (FASTA)</button>
+      <button id="dlAssign" class="secondary">Download read assignments (TSV)</button>
+    </div>
+  </section>
+
+  <section class="panel hidden" id="logPanel">
+    <h2>Log</h2>
+    <pre class="log" id="log"></pre>
+  </section>
+
+  <p class="note">
+    Source and command-line version: <a href="https://github.com/mktle/DeKnot">github.com/mktle/DeKnot</a>.
+    The browser build is compiled from the same C++ code with Emscripten; large loci can take a minute or two.
+  </p>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const drop = $('drop'), fileInput = $('file'), runBtn = $('run'), cancelBtn = $('cancel');
+  const statusEl = $('status'), logEl = $('log'), logPanel = $('logPanel');
+  const results = $('results'), summary = $('summary'), tbody = $('walksTable').querySelector('tbody');
+
+  let file = null, worker = null, timer = null, lastResult = null;
+  let logBuf = [], logFlush = null;
+
+  function setStatus(text, cls) { statusEl.textContent = text; statusEl.className = 'status' + (cls ? ' ' + cls : ''); }
+  function setFile(f) {
+    file = f;
+    $('fileName').textContent = f ? `${f.name} (${(f.size / 1e6).toFixed(2)} MB)` : '';
+    runBtn.disabled = !f;
+    setStatus('');
+  }
+
+  fileInput.addEventListener('change', () => setFile(fileInput.files[0] || null));
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) setFile(f); });
+
+  function params() {
+    return {
+      s: +$('s').value, kPrime: +$('kPrime').value, freqThresh: +$('freqThresh').value,
+      maxIterations: +$('maxIterations').value, checkStrand: $('checkStrand').checked, verbose: $('verbose').checked,
+    };
+  }
+
+  function stopWorker() {
+    if (worker) { worker.terminate(); worker = null; }
+    if (timer) { clearInterval(timer); timer = null; }
+    runBtn.disabled = !file; cancelBtn.classList.add('hidden');
+  }
+
+  runBtn.addEventListener('click', async () => {
+    if (!file) return;
+    results.classList.add('hidden'); logEl.textContent = ''; logPanel.classList.add('hidden'); lastResult = null; logBuf = [];
+    runBtn.disabled = true; cancelBtn.classList.remove('hidden');
+    setStatus('Reading file…');
+    const buf = await file.arrayBuffer();
+    const t0 = performance.now();
+    timer = setInterval(() => setStatus(`Assembling… ${((performance.now() - t0) / 1000).toFixed(0)} s`), 500);
+
+    worker = new Worker('worker.js');
+    worker.onmessage = (ev) => {
+      const m = ev.data;
+      if (m.type === 'log') {
+        // batch appends: verbose runs emit thousands of lines
+        logBuf.push(m.text);
+        if (!logFlush) logFlush = requestAnimationFrame(() => {
+          logFlush = null;
+          logPanel.classList.remove('hidden');
+          logEl.textContent += logBuf.join('\n') + '\n';
+          logBuf = [];
+          logEl.scrollTop = logEl.scrollHeight;
+        });
+      } else if (m.type === 'status') {
+        // timer overwrites this; kept for completeness
+      } else if (m.type === 'done') {
+        stopWorker();
+        lastResult = m;
+        showResults(m);
+        setStatus(`Done in ${m.seconds.toFixed(1)} s`, 'ok');
+      } else if (m.type === 'error') {
+        stopWorker();
+        setStatus('Error: ' + m.message, 'err');
+      }
+    };
+    worker.onerror = (e) => { stopWorker(); setStatus('Error: ' + (e.message || 'worker crashed'), 'err'); };
+    worker.postMessage({ type: 'run', fastq: buf, name: file.name, params: params() }, [buf]);
+  });
+
+  cancelBtn.addEventListener('click', () => { stopWorker(); setStatus('Cancelled'); });
+
+  function showResults(m) {
+    const seqs = [];
+    for (const rec of m.walks.split('>').slice(1)) {
+      const nl = rec.indexOf('\n');
+      seqs.push({ name: rec.slice(0, nl).trim(), len: rec.slice(nl + 1).replace(/\s/g, '').length });
+    }
+    tbody.innerHTML = '';
+    for (const s of seqs) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${s.name}</td><td class="num">${s.len.toLocaleString()}</td>`;
+      tbody.appendChild(tr);
+    }
+    const nAssigned = m.assignments.split('\n').slice(1).filter(l => l && !l.endsWith('\t0')).length;
+    summary.textContent = `${m.nWalks} haplotype walk${m.nWalks === 1 ? '' : 's'}; ${nAssigned} reads assigned to a haplotype.`;
+    results.classList.remove('hidden');
+  }
+
+  function download(text, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  const stem = () => (file ? file.name.replace(/\.(fq|fastq)$/i, '') : 'deknot');
+  $('dlWalks').addEventListener('click', () => lastResult && download(lastResult.walks, stem() + '.deknot_walks.fa'));
+  $('dlAssign').addEventListener('click', () => lastResult && download(lastResult.assignments, stem() + '.deknot_assignments.tsv'));
+})();
+</script>
+</body>
+</html>

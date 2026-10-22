@@ -27,7 +27,7 @@ uint64_t utils::pow_base(size_t e){
     return r;
 }
 
-size_t utils::hash_kmers(Span<uint64_t>& kmers, bool flip){
+uint64_t utils::hash_kmers(Span<uint64_t>& kmers, bool flip){
     uint64_t h = 0;
     if (!flip){
         for (size_t i = 0; i < kmers.size(); i++){
@@ -38,7 +38,7 @@ size_t utils::hash_kmers(Span<uint64_t>& kmers, bool flip){
             h = h * utils::HASH_BASE + kmers[i];
         }
     }
-    return (size_t)h;
+    return h;
 }
 
 char utils::reverse_orientation(char orig){

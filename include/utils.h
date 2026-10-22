@@ -11,7 +11,7 @@ const char REVERSE_ORIENTATION = '-';
 const char INVALID_ORIENTATION = 'X';
 
 namespace utils{
-    size_t hash_kmers(Span<uint64_t>& kmers, bool flip);
+    uint64_t hash_kmers(Span<uint64_t>& kmers, bool flip);
 
     extern const uint64_t HASH_BASE;
     extern const uint64_t HASH_BASE_INV;
@@ -39,9 +39,9 @@ namespace utils{
             l++;
         }
 
-        size_t hash_at(size_t idx, bool flip){
+        uint64_t hash_at(size_t idx, bool flip){
             while (l < idx) { advance(); }
-            return (size_t)(flip ? hr : hf);
+            return flip ? hr : hf;
         }
     };
 }
@@ -51,10 +51,10 @@ struct KmerView{
     bool flip;
     // so we don't need to perform the expensive hash computation every time
     // and we know every KmerView will be hashed at least once
-    size_t hash;
+    uint64_t hash;
 
     KmerView(Span<uint64_t> k, bool f) : kmers(k), flip(f), hash(utils::hash_kmers(k, f)) {}
-    KmerView(Span<uint64_t> k, bool f, size_t precomputed) : kmers(k), flip(f), hash(precomputed) {}
+    KmerView(Span<uint64_t> k, bool f, uint64_t precomputed) : kmers(k), flip(f), hash(precomputed) {}
     KmerView() : kmers(Span<uint64_t>()), flip(false), hash(0) {}
 };
 
@@ -62,7 +62,7 @@ namespace utils{
     char reverse_orientation(char orig);
 
     struct KmerViewHash{
-        size_t operator()(const KmerView& kmers) const {
+        uint64_t operator()(const KmerView& kmers) const {
             return kmers.hash;
         }
     };
