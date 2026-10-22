@@ -4,7 +4,7 @@ name: Deploy web app
 
 on:
   push:
-    branches: [web]
+    branches: [main]
   workflow_dispatch:
 
 permissions:

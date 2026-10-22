@@ -106,9 +106,8 @@ static dk_graph_t* dk_assemble_core(dk_opt_t* opt, char** reads_arr, char** read
             std::string out_reads {std::string(opt->out_dir) + "/k" + std::to_string(k_prime) + "_reads.fa"};
             io::write_sequences(input_seqs, out_reads);
         }
-        bool check_dinuc {k_prime - init_k_prime > 100};
-        curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc);
-        curr_graph->trim_tips();
+        bool check_dinuc {k_prime - init_k_prime > 150};
+        curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc, (bool)opt->check_strand, opt->verbose);
         curr_graph->remove_floaters(opt->compact_thresh);
         if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || is_checkpoint)){
             std::string out_hpc {std::string(opt->out_dir) + "/compacted_" + std::to_string(k_prime) + ".hpc.gfa"};
