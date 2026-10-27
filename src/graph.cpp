@@ -114,6 +114,17 @@ int Graph::min_connect_size(){
     return min;
 }
 
+long Graph::total_unitig_length(){
+    long total {0};
+    for (size_t i{0}; i < this->unitig_list.size(); i++){
+        Unitig* utg = this->unitig_list[i];
+        if (utg != NULL){
+            total += (long)utg->num_nodes() + (long)this->k_prime - 1;
+        }
+    }
+    return total;
+}
+
 // guard thresholds
 static long guard_from_env(const char* name){
     const char* v = getenv(name);
@@ -907,12 +918,17 @@ void Graph::trim_tips(float abs_cap){
     }
 }
 
+static bool float_guard_enabled(){
+    static const bool enabled = getenv("DK_FLOAT_GUARD") != NULL && atoi(getenv("DK_FLOAT_GUARD")) != 0;
+    return enabled;
+}
+
 void Graph::remove_floaters(int threshold){
     for (size_t i{0}; i < this->unitig_list.size(); i++){
         Unitig* utg = this->unitig_list[i];
-        if (utg != NULL && utg->is_floating() && utg->get_median_freq() <= threshold){
-            this->destroy_unitig(utg);
-        }
+        if (utg == NULL || !utg->is_floating() || utg->get_median_freq() > threshold) continue;
+        if (float_guard_enabled() && utg->num_nodes() >= 3 * this->get_k_prime() && utg->get_median_freq() >= threshold - 1) continue;
+        this->destroy_unitig(utg);
     }
 }
 

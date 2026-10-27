@@ -12,10 +12,16 @@
 #include <string>
 #include <unordered_map>
 
-const int DEBUG_CHECKPOINTS[] = {2, 3, 50, 100, 110, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 140, 150, 160, 170, 180, 190, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 230, 240, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350, 1400, 1450, 1500, 1550};
+const double COLLAPSE_FRAC = 0.25;
+
+const int DEBUG_CHECKPOINTS[] = {};
 int DEBUG_IDX = 0;
 
-bool construct_graph(int k_prime, int max_k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose);
+typedef ankerl::unordered_dense::set<size_t> IdxSet;
+static int prepare_iteration(int k_prime, int max_k_prime, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, IdxSet& remove_set);
+static void build_graph(std::vector<SketchedSeq*>& input_sequences, const IdxSet& base_remove, Graph* prev_graph, Graph* dbg, IdxSet& remove_set);
+static void retire_sequences(std::vector<SketchedSeq*>& input_sequences, const IdxSet& remove_set, std::vector<SketchedSeq*>& prev_seqs);
+static bool graph_collapsed(Graph* curr_graph, Graph* prev_graph);
 
 void dk_opt_init(dk_opt_t* opt){
     memset(opt, 0, sizeof(dk_opt_t));
@@ -79,45 +85,71 @@ static dk_graph_t* dk_assemble_core(dk_opt_t* opt, char** reads_arr, char** read
         if(opt->verbose){
             std::cout << "\n*****\nbeginning construction:" << std::endl;
         }
-        if (!construct_graph(k_prime, max_k_prime, prev_seqs, input_seqs, prev_graph, curr_graph, opt->verbose)){
-            return NULL;
+        IdxSet base_remove;
+        int target_k_prime = prepare_iteration(k_prime, max_k_prime, input_seqs, prev_graph, base_remove);
+        int k_lo = (prev_graph == NULL) ? target_k_prime : prev_graph->get_k_prime();
+        bool keep_prev {false};
+        IdxSet remove_set;
+        while (true){
+            curr_graph->set_k_prime(target_k_prime);
+            build_graph(input_seqs, base_remove, prev_graph, curr_graph, remove_set);
+            k_prime = curr_graph->get_k_prime();
+            if (opt->verbose){
+                std::cout << "k' = " << k_prime << std::endl;
+                std::cout << input_seqs.size() - remove_set.size() << " sequences" << std::endl;
+                std::cout << curr_graph->num_nodes() << " initial nodes" << std::endl;
+                std::cout << curr_graph->num_unitigs() << " initial unitigs" << std::endl;
+            }
+            bool is_checkpoint = (opt->out_dir != NULL) && check_for_checkpoint(k_prime);
+            if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || is_checkpoint)){
+                std::string out_unitigs {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + ".gfa"};
+                //std::string out_nodes {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + "_nodes.gfa"};
+                curr_graph->write_hpc_unitigs_to_gfa(out_unitigs, true);
+                //curr_graph->write_nodes_to_gfa(out_nodes, true);
+                std::string out_reads {std::string(opt->out_dir) + "/k" + std::to_string(k_prime) + "_reads.fa"};
+                std::vector<SketchedSeq*> kept_seqs;
+                for (size_t i{0}; i < input_seqs.size(); i++){
+                    if (!remove_set.count(i)) kept_seqs.push_back(input_seqs[i]);
+                }
+                io::write_sequences(kept_seqs, out_reads);
+            }
+            bool check_dinuc {k_prime - init_k_prime > 150};
+            curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc, (bool)opt->check_strand, opt->verbose);
+            curr_graph->remove_floaters(opt->compact_thresh);
+            if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || is_checkpoint)){
+                std::string out_hpc {std::string(opt->out_dir) + "/compacted_" + std::to_string(k_prime) + ".hpc.gfa"};
+                curr_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
+            }
+            if (opt->verbose){
+                std::cout << curr_graph->num_nodes() << " nodes after compaction" << std::endl;
+                std::cout << curr_graph->num_unitigs() << " unitigs after compaction" << std::endl;
+            }
+            if (prev_graph != NULL && graph_collapsed(curr_graph, prev_graph)){
+                // k' step overshot what the reads support
+                int k_hi = k_prime;
+                if (k_hi - k_lo <= 1){
+                    if (opt->verbose) std::cout << "graph collapsed at k' = " << k_hi << ", keeping k' = " << k_lo << std::endl;
+                    keep_prev = true;
+                    break;
+                }
+                target_k_prime = k_lo + (k_hi - k_lo) / 2;
+                if (opt->verbose) std::cout << "graph collapsed at k' = " << k_hi << ", retrying at k' = " << target_k_prime << std::endl;
+                delete curr_graph;
+                curr_graph = new Graph(target_k_prime);
+                continue;
+            }
+            break;
         }
-        k_prime = curr_graph->get_k_prime();
+        if (keep_prev) break;
         if (k_prime == 3){
             // deep copy the sequences so they aren't lost later
             // TODO: maybe just perform correction again but with the final unitigs?
-            for (auto* seq : input_seqs){
-                if (seq->is_read) corrected_seqs.push_back(new SketchedSeq(*seq));
-
+            for (size_t i{0}; i < input_seqs.size(); i++){
+                if (!remove_set.count(i) && input_seqs[i]->is_read) corrected_seqs.push_back(new SketchedSeq(*input_seqs[i]));
             }
         }
-        if (opt->verbose){
-            std::cout << "k' = " << k_prime << std::endl;
-            std::cout << input_seqs.size() << " sequences" << std::endl;
-            std::cout << curr_graph->num_nodes() << " initial nodes" << std::endl;
-            std::cout << curr_graph->num_unitigs() << " initial unitigs" << std::endl;
-        }
-        bool is_checkpoint = (opt->out_dir != NULL) && check_for_checkpoint(k_prime);
-        if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || is_checkpoint)){
-            std::string out_unitigs {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + ".gfa"};
-            //std::string out_nodes {std::string(opt->out_dir) + "/initial_k" + std::to_string(k_prime) + "_nodes.gfa"};
-            curr_graph->write_hpc_unitigs_to_gfa(out_unitigs, true);
-            //curr_graph->write_nodes_to_gfa(out_nodes, true);
-            std::string out_reads {std::string(opt->out_dir) + "/k" + std::to_string(k_prime) + "_reads.fa"};
-            io::write_sequences(input_seqs, out_reads);
-        }
-        bool check_dinuc {k_prime - init_k_prime > 150};
-        curr_graph->trim_low_freq_unitigs(opt->compact_thresh, check_dinuc, (bool)opt->check_strand, opt->verbose);
-        curr_graph->remove_floaters(opt->compact_thresh);
-        if ((opt->out_dir != NULL) && (k_prime == init_k_prime || k_prime == init_k_prime + opt->max_iterations || is_checkpoint)){
-            std::string out_hpc {std::string(opt->out_dir) + "/compacted_" + std::to_string(k_prime) + ".hpc.gfa"};
-            curr_graph->write_hpc_unitigs_to_gfa(out_hpc, true);
-        }
-        if (opt->verbose){
-            std::cout << curr_graph->num_nodes() << " nodes after compaction" << std::endl;
-            std::cout << curr_graph->num_unitigs() << " unitigs after compaction" << std::endl;
-        }
         curr_graph->trim_tips((float)opt->compact_thresh);
+        retire_sequences(input_seqs, remove_set, prev_seqs);
         curr_graph->add_unitigs_to_input(input_seqs, opt->s);
         if (prev_graph != NULL){
             delete prev_graph;
@@ -375,10 +407,8 @@ void dk_graph_free(dk_graph_t* to_free){
     delete[] to_free;
 }
 
-bool construct_graph(int k_prime, int max_k_prime, std::vector<SketchedSeq*>& prev_seqs, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, Graph* dbg, bool verbose){
-    ankerl::unordered_dense::set<size_t> remove_set;
+static int prepare_iteration(int k_prime, int max_k_prime, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, IdxSet& remove_set){
     std::vector<SketchedSeq*> corrected_seqs;
-    // check the sequences to see if they should be removed (and also calculate jump length)
     for (size_t seq_idx {0}; seq_idx < input_sequences.size(); seq_idx++){
         if (input_sequences[seq_idx]->kmers.size() < k_prime){
             remove_set.insert(seq_idx);
@@ -402,22 +432,26 @@ bool construct_graph(int k_prime, int max_k_prime, std::vector<SketchedSeq*>& pr
         k_prime += std::max(prev_graph->min_connect_size() - 2, 0);
         if (k_prime > max_k_prime) k_prime = max_k_prime;
     }
-    dbg->set_k_prime(k_prime);
-    if (prev_graph != NULL){
-        dbg->reserve_nodes((size_t)prev_graph->num_nodes() + (size_t)prev_graph->num_nodes() / 8);
-    }
-
     for (size_t i{0}; i < corrected_seqs.size(); i++){
         input_sequences.emplace_back(corrected_seqs[i]);
     }
-    // actually add the sequences now
+    return k_prime;
+}
+
+static void build_graph(std::vector<SketchedSeq*>& input_sequences, const IdxSet& base_remove, Graph* prev_graph, Graph* dbg, IdxSet& remove_set){
+    remove_set = base_remove;
+    if (prev_graph != NULL){
+        dbg->reserve_nodes((size_t)prev_graph->num_nodes() + (size_t)prev_graph->num_nodes() / 8);
+    }
     for (size_t seq_idx {0}; seq_idx < input_sequences.size(); seq_idx++){
         if((remove_set.find(seq_idx) == remove_set.end())  && (input_sequences[seq_idx]->kmers.size() < dbg->get_k_prime() || !dbg->add_sequence(*input_sequences[seq_idx], prev_graph))){
             remove_set.insert(seq_idx);
         }
     }
-    prev_seqs.clear();
+}
 
+static void retire_sequences(std::vector<SketchedSeq*>& input_sequences, const IdxSet& remove_set, std::vector<SketchedSeq*>& prev_seqs){
+    prev_seqs.clear();
     std::vector<SketchedSeq*> kept;
     kept.reserve(input_sequences.size() - remove_set.size());
     for (size_t i{0}; i < input_sequences.size(); i++){
@@ -428,7 +462,13 @@ bool construct_graph(int k_prime, int max_k_prime, std::vector<SketchedSeq*>& pr
         }
     }
     input_sequences = std::move(kept);
-    return true;
+}
+
+static bool graph_collapsed(Graph* curr_graph, Graph* prev_graph){
+    if (curr_graph->num_unitigs() == 0) return true;
+    static const double collapse_frac = getenv("DK_COLLAPSE_FRAC") ? atof(getenv("DK_COLLAPSE_FRAC")) : COLLAPSE_FRAC;
+    if (collapse_frac <= 0) return false;
+    return (double)curr_graph->total_unitig_length() < collapse_frac * (double)prev_graph->total_unitig_length();
 }
 
 bool check_for_checkpoint(int curr_k_prime){

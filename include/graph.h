@@ -41,6 +41,7 @@ class Graph {
         int num_nodes();
         int num_unitigs();
         int min_connect_size();
+        long total_unitig_length();
         bool check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, SketchedSeq*& corrected_seq, SketchedSeq*& split_seq);
         void correct_read_error_within_unitig(DroppedBlock& to_correct, SketchedSeq*& corrected_seq);
         void correct_read_error_across_unitigs(DroppedBlock& dropped_block, SketchedSeq*& corrected_seq);

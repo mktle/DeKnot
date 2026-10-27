@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <unordered_set>
 
 void phase::initialize_unitigs_for_tagging(Graph* graph, std::vector<SketchedSeq*>& reads, std::vector<Unitig*>& sorted_unitigs, int comp_num){
     graph->update_median_coverage();
@@ -131,7 +132,7 @@ void phase::identify_endpoints(Graph* graph, std::vector<std::vector<Unitig*>>& 
     std::sort(hom_endpoints.begin(), hom_endpoints.end(), compare_unitigs);
 }
 
-bool phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_seqs, int comp_num){
+bool phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_seqs, int comp_num, std::vector<Unitig*>* walked){
     std::vector<std::vector<Unitig*>> hap_endpoints;
     std::vector<Unitig*> hom_endpoints;
     phase::identify_endpoints(graph, hap_endpoints, hom_endpoints, comp_num);
@@ -175,6 +176,7 @@ bool phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_
         }
         Walk best_walk(NULL, 0);
         phase::build_walk(best_walk, start_node, hap_num);
+        if (walked != NULL) walked->insert(walked->end(), best_walk.utgs.begin(), best_walk.utgs.end());
 
         std::string walk_seq;
         assert(best_walk.utgs[0] == start_node->get_unitig());
@@ -290,6 +292,30 @@ void phase::phase_component(int comp_num, std::vector<std::string>& phased_walks
         utg_list[0]->get_hpc_sequence(utg_seq, false, false);
         phased_walks.emplace_back(utg_seq);
     }else{
+        bool has_bubble {false};
+        for (size_t i{0}; i < utg_list.size(); i++){
+            if (utg_list[i]->get_parallel_utg() != NULL){ has_bubble = true; break; }
+        }
+        if (!has_bubble){
+            for (size_t i{0}; i < utg_list.size(); i++) utg_list[i]->set_assignment(HOM);
+            std::vector<std::string> path_seqs;
+            std::vector<Unitig*> walked;
+            if (phase::get_haplotype_sequences(prev_graph, path_seqs, comp_num, &walked) && !path_seqs.empty()){
+                phased_walks.emplace_back(path_seqs[0]);
+            }
+            std::unordered_set<Unitig*> visited(walked.begin(), walked.end());
+            size_t n_extra {0};
+            for (size_t i{0}; i < utg_list.size(); i++){
+                if (visited.count(utg_list[i]) == 0){
+                    std::string utg_seq;
+                    utg_list[i]->get_hpc_sequence(utg_seq, false, false);
+                    phased_walks.emplace_back(utg_seq);
+                    n_extra++;
+                }
+            }
+            if (verbose) std::cout << "(" << comp_num << ") no bubble: emitted the homozygous path once plus " << n_extra << " unvisited unitigs" << std::endl;
+            return;
+        }
         int round {0};
         while(utg_list.size() > 0){
             if (!phase::seed_initial_haplotypes(utg_list)){
