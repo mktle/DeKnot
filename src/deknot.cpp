@@ -14,7 +14,7 @@
 
 const double COLLAPSE_FRAC = 0.25;
 
-const int DEBUG_CHECKPOINTS[] = {};
+const int DEBUG_CHECKPOINTS[] = {99999999};
 int DEBUG_IDX = 0;
 
 typedef ankerl::unordered_dense::set<size_t> IdxSet;

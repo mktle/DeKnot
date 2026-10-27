@@ -174,6 +174,28 @@ bool phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_
                 start_node = first_node;
             }
         }
+        {
+            std::vector<Node*> cands;
+            for (Unitig* u : endpoints) cands.push_back(u->get_front()->neighbors_diff_utg() ? u->get_back() : u->get_front());
+            for (Unitig* u : hom_endpoints) cands.push_back(u->get_front()->neighbors_diff_utg() ? u->get_back() : u->get_front());
+            cands.push_back(start_node);
+            long best_score {-1};
+            Node* best_start = start_node;
+            for (Node* cand : cands){
+                graph->reset_haplotypes();
+                Walk trial(NULL, 0);
+                phase::build_walk(trial, cand, hap_num);
+                long hap_nodes {0}, total_nodes {0};
+                for (Unitig* u : trial.utgs){
+                    total_nodes += u->num_nodes();
+                    if (u->get_assignment() == hap_num) hap_nodes += u->num_nodes();
+                }
+                long score = hap_nodes * 1000000L + total_nodes;
+                if (score > best_score){ best_score = score; best_start = cand; }
+            }
+            graph->reset_haplotypes();
+            start_node = best_start;
+        }
         Walk best_walk(NULL, 0);
         phase::build_walk(best_walk, start_node, hap_num);
         if (walked != NULL) walked->insert(walked->end(), best_walk.utgs.begin(), best_walk.utgs.end());
