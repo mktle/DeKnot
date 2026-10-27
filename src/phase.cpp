@@ -111,10 +111,16 @@ void phase::identify_endpoints(Graph* graph, std::vector<std::vector<Unitig*>>& 
     const std::vector<Unitig*> utgs = graph->view_unitigs();
     for (size_t i{0}; i < utgs.size(); i++){
         if(utgs[i] != NULL && utgs[i]->get_component() == comp_num){
-            assert(utgs[i]->get_front() != utgs[i]->get_back());
-            // subtract one for the neighbor on the same unitig
-            int front_neighs {utgs[i]->get_front()->num_neighbors() - 1};
-            int back_neighs {utgs[i]->get_back()->num_neighbors() - 1};
+            int front_neighs, back_neighs;
+            if (utgs[i]->get_front() == utgs[i]->get_back()){
+                int n_neighs {utgs[i]->get_front()->num_neighbors()};
+                front_neighs = (n_neighs == 1) ? 0 : n_neighs;
+                back_neighs = n_neighs;
+            }else{
+                // subtract one for the neighbor on the same unitig
+                front_neighs = utgs[i]->get_front()->num_neighbors() - 1;
+                back_neighs = utgs[i]->get_back()->num_neighbors() - 1;
+            }
 
             if ((front_neighs == 0 && back_neighs > 0) || (back_neighs == 0 && front_neighs > 0)){
                 if (utgs[i]->get_assignment() == HOM){
@@ -202,13 +208,32 @@ bool phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_
 
         std::string walk_seq;
         assert(best_walk.utgs[0] == start_node->get_unitig());
-        start_node->get_unitig()->get_hpc_sequence(walk_seq, start_node == start_node->get_unitig()->get_back(), false);
+        auto single_node_reverse = [](Node* node, Node* other, bool entering) -> bool {
+            const EdgeList& edges = entering ? other->view_neighbors() : node->view_neighbors();
+            Node* target = entering ? node : other;
+            for (size_t m{0}; m < edges.size(); m++){
+                if (edges[m].neighbor == target){
+                    return (entering ? edges[m].neighbor_orientation : edges[m].self_orientation) == REVERSE_ORIENTATION;
+                }
+            }
+            return false;
+        };
+        Unitig* first_utg = start_node->get_unitig();
+        bool first_reverse = (start_node == first_utg->get_back());
+        if (first_utg->get_front() == first_utg->get_back() && best_walk.utgs.size() > 1){
+            Unitig* second = best_walk.utgs[1];
+            Node* second_entry = second->get_front()->is_neighbors_with(start_node) ? second->get_front() : second->get_back();
+            first_reverse = single_node_reverse(start_node, second_entry, false);
+        }
+        first_utg->get_hpc_sequence(walk_seq, first_reverse, false);
 
-        Node* exit_node = start_node->get_unitig()->opposite_end(start_node);
+        Node* exit_node = first_utg->opposite_end(start_node);
         for (size_t j{1}; j < best_walk.utgs.size(); j++){
-            Node* next_node = (best_walk.utgs[j]->get_front()->is_neighbors_with(exit_node)) ? best_walk.utgs[j]->get_front() : best_walk.utgs[j]->get_back();
-            next_node->get_unitig()->get_hpc_sequence(walk_seq, next_node == next_node->get_unitig()->get_back(), true);
-            exit_node = next_node->get_unitig()->opposite_end(next_node);
+            Unitig* next_utg = best_walk.utgs[j];
+            Node* next_node = (next_utg->get_front()->is_neighbors_with(exit_node)) ? next_utg->get_front() : next_utg->get_back();
+            bool next_reverse = (next_utg->get_front() == next_utg->get_back()) ? single_node_reverse(next_node, exit_node, true) : (next_node == next_utg->get_back());
+            next_utg->get_hpc_sequence(walk_seq, next_reverse, true);
+            exit_node = next_utg->opposite_end(next_node);
         }
         ret_seqs.emplace_back(walk_seq);
     }

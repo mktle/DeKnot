@@ -479,8 +479,17 @@ void Unitig::list_nodes(){
 void Unitig::get_hpc_sequence(std::string& ret_seq, bool reverse, bool append){
     ret_seq.reserve(ret_seq.size() + this->nodes.size() * 12 + 64);
     if (this->nodes.size() == 1){
-        assert(!append);
-        this->get_front()->get_hpc_sequence(ret_seq, reverse);
+        Node* only_node = this->get_front();
+        if (!append){
+            only_node->get_hpc_sequence(ret_seq, reverse);
+        }else{
+            int k_prime = only_node->num_kmers();
+            if (!reverse){
+                hash::add_to_seq_from_hash(only_node->get_back_hash(), only_node->ith_kmer_flipped(k_prime - 1), only_node->ith_unique_seq_len(k_prime - 2), ret_seq);
+            }else{
+                hash::add_to_seq_from_hash(only_node->get_front_hash(), !only_node->ith_kmer_flipped(0), only_node->ith_unique_seq_len(0), ret_seq);
+            }
+        }
     }else{
         Node* curr_node = reverse ? this->get_back() : this->get_front();
         int k_prime = curr_node->num_kmers();
