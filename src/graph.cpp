@@ -14,8 +14,8 @@
 #include <queue>
 #include <string>
 
-static std::vector<Node*> node_pool;
-static std::vector<Unitig*> unitig_pool;
+static thread_local std::vector<Node*> node_pool;
+static thread_local std::vector<Unitig*> unitig_pool;
 
 static Node* acquire_node(KmerView& k_syncmer, Span<uint8_t>& kmer_flipped, Span<int>& unique_seq_idx, int id){
     if (!node_pool.empty()){

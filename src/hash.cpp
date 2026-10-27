@@ -1,3 +1,4 @@
+#include <mutex>
 #include "hash.h"
 #include "syncmer.h"
 
@@ -127,9 +128,11 @@ uint64_t hash::encode_subkmer(std::string& kmer) {
 }
 
 void hash::initialize_dinucleotide_hashes(){
-    std::vector<std::string> to_hash = {"ACACAC", "AGAGAG", "ATATAT", "CACACA", "CGCGCG", "CTCTCT", "GAGAGA", "GCGCGC", "GTGTGT", "TATATA", "TCTCTC", "TGTGTG" };
-    for (size_t i{0}; i < to_hash.size(); i++){
-        DINUCLEOTIDE_SUBHASHES.insert(hash::encode_subkmer(to_hash[i]));
-    }
-
+    static std::once_flag once;
+    std::call_once(once, [](){
+        std::vector<std::string> to_hash = {"ACACAC", "AGAGAG", "ATATAT", "CACACA", "CGCGCG", "CTCTCT", "GAGAGA", "GCGCGC", "GTGTGT", "TATATA", "TCTCTC", "TGTGTG" };
+        for (size_t i{0}; i < to_hash.size(); i++){
+            DINUCLEOTIDE_SUBHASHES.insert(hash::encode_subkmer(to_hash[i]));
+        }
+    });
 }
