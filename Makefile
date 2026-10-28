@@ -2,7 +2,6 @@ CC = g++
 #CFLAGS = -std=c++17 -O2 -DNDEBUG -pedantic-errors -Wall -Wextra -Wconversion -Wno-sign-compare -Iinclude -fsanitize=address -g
 CFLAGS = -std=c++17 -O2 -DNDEBUG -pedantic-errors -Wall -Wextra -Wconversion -Wno-sign-compare -Iinclude 
 
-# Directories
 SRC1_DIR = src
 INCLUDE_DIR = include
 BUILD_DIR = build
@@ -14,7 +13,6 @@ OBJ_FILES = $(patsubst $(SRC1_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(filter %.cpp,$(SRC_F
 TARGET = deknot
 LIB_TARGET = libdeknot.a
 
-# Rule to build the target
 $(TARGET): $(OBJ_FILES)
 	$(CC) $(CFLAGS) -o $@ $(OBJ_FILES)
 
@@ -24,10 +22,12 @@ $(LIB_TARGET): $(filter-out $(BUILD_DIR)/main.o,$(OBJ_FILES))
 lib: $(LIB_TARGET)
 
 $(BUILD_DIR)/%.o: $(SRC1_DIR)/%.cpp | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 $(BUILD_DIR)/%.o: $(SRC1_DIR)/%.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
+
+-include $(OBJ_FILES:.o=.d)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)

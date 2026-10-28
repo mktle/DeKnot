@@ -42,6 +42,49 @@ int dk_set_opt(const char* preset, dk_opt_t* opt){
     return 0;
 }
 
+static void syncmers_without_counterpart(Unitig* a, Unitig* b, int s, std::vector<uint64_t>& neutral){
+    std::string seq_a, seq_b;
+    a->get_hpc_sequence(seq_a, false, false);
+    b->get_hpc_sequence(seq_b, false, false);
+    if (seq_b.size() > seq_a.size()) std::swap(seq_a, seq_b); // seq_a = longer
+    std::vector<uint64_t> ka, kb; std::vector<uint8_t> fa, fb; std::vector<int> ua, ub, ia, ib;
+    syncmer::get_all_syncmers(seq_a, s, ka, fa, ua, ia);
+    syncmer::get_all_syncmers(seq_b, s, kb, fb, ub, ib);
+    ankerl::unordered_dense::map<uint64_t, long> pos_in_a;
+    for (size_t i{0}; i < ka.size(); i++){
+        auto it = pos_in_a.find(ka[i]);
+        if (it == pos_in_a.end()) pos_in_a[ka[i]] = (long)i; else it->second = -1;
+    }
+    auto median_pos = [&](size_t from, size_t to) -> long {
+        std::vector<long> hits;
+        for (size_t i{from}; i < to; i++){
+            auto it = pos_in_a.find(kb[i]);
+            if (it != pos_in_a.end() && it->second >= 0) hits.push_back(it->second);
+        }
+        if (hits.size() < 30) return -1;
+        std::sort(hits.begin(), hits.end());
+        return hits[hits.size() / 2];
+    };
+    size_t n_end = std::min<size_t>(300, kb.size() / 4);
+    long p_first = (kb.size() >= 4) ? median_pos(0, n_end) : -1;
+    long p_last = (kb.size() >= 4) ? median_pos(kb.size() - n_end, kb.size()) : -1;
+    long lo, hi;
+    if (p_first >= 0 && p_last >= 0){
+        lo = std::min(p_first, p_last); hi = std::max(p_first, p_last);
+    }else{
+        lo = -1; hi = -1;
+        ankerl::unordered_dense::set<uint64_t> in_b(kb.begin(), kb.end());
+        for (size_t i{0}; i < ka.size(); i++){
+            if (in_b.contains(ka[i])){ if (lo < 0) lo = (long)i; hi = (long)i; }
+        }
+        if (lo < 0) return;
+    }
+    long margin = 200;
+    for (size_t i{0}; i < ka.size(); i++){
+        if ((long)i < lo - margin || (long)i > hi + margin) neutral.push_back(ka[i]);
+    }
+}
+
 static dk_graph_t* dk_assemble_core(dk_opt_t* opt, char** reads_arr, char** read_names, int n_reads, dk_walks_t** walks_out){
     if (n_reads <= 0 || reads_arr == NULL) return NULL;
     /************************************************************
@@ -173,6 +216,8 @@ static dk_graph_t* dk_assemble_core(dk_opt_t* opt, char** reads_arr, char** read
     
     std::vector<std::string> phased_walks;
 
+    std::unordered_map<std::string, int> name_to_assignment;
+    std::vector<uint64_t> neutral_syncmers;
     if(prev_graph->num_unitigs() > 2){
         phase::phase_component(prev_graph->get_largest_component(), phased_walks, prev_graph, corrected_seqs, opt->verbose);
         if (prev_graph->num_components() > 1){
@@ -181,6 +226,31 @@ static dk_graph_t* dk_assemble_core(dk_opt_t* opt, char** reads_arr, char** read
                     phase::phase_component(i, phased_walks, prev_graph, corrected_seqs, opt->verbose);
                 }
             }
+        }
+        for (SketchedSeq* seq : corrected_seqs){
+            if (seq->assignment == HAP1 || seq->assignment == HAP2) name_to_assignment[seq->orig_name] = seq->assignment;
+        }
+    }else if (prev_graph->num_unitigs() == 2){
+        std::vector<Unitig*> pair;
+        const std::vector<Unitig*> utgs = prev_graph->view_unitigs();
+        for (size_t i{0}; i < utgs.size(); i++) if (utgs[i] != NULL) pair.push_back(utgs[i]);
+        if (pair.size() == 2){
+            pair[0]->set_assignment(HAP1);
+            pair[1]->set_assignment(HAP2);
+            syncmers_without_counterpart(pair[0], pair[1], opt->s, neutral_syncmers);
+        }
+    }
+    {
+        std::vector<SketchedSeq*> all_reads;
+        syncmer::sketch_sequences(opt->s, reads, names, all_reads);
+        for (SketchedSeq* r : all_reads){
+            auto it = name_to_assignment.find(r->orig_name);
+            if (it != name_to_assignment.end()) r->assignment = it->second;
+        }
+        if (getenv("DK_NO_SYNCMER_VOTE") == NULL) phase::assign_reads_by_syncmers(prev_graph, all_reads, neutral_syncmers, opt->verbose);
+        for (SketchedSeq* r : all_reads){
+            if (r->assignment == HAP1 || r->assignment == HAP2) name_to_assignment[r->orig_name] = r->assignment;
+            delete r;
         }
     }
     dk_graph_t* ret_graph = prev_graph->convert_to_gfa_representation();
@@ -243,10 +313,10 @@ static dk_graph_t* dk_assemble_core(dk_opt_t* opt, char** reads_arr, char** read
         for (int i{0}; i < n_reads; i++){
             name_to_idx[names[(size_t)i]] = i;
         }
-        for (SketchedSeq* seq : corrected_seqs){
-            auto it = name_to_idx.find(seq->name);
-            if (it != name_to_idx.end() && seq->assignment > 0){
-                walks->read_assignments[it->second] = seq->assignment;
+        for (const auto& kv : name_to_assignment){
+            auto it = name_to_idx.find(kv.first);
+            if (it != name_to_idx.end() && kv.second > 0){
+                walks->read_assignments[it->second] = kv.second;
             }
         }
         *walks_out = walks;

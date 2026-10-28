@@ -12,6 +12,7 @@ const int KMER_SIZE = 31;
 struct SketchedSeq{
     // for debugging purposes
     std::string name;
+    std::string orig_name;
     // as opposed to a unitig
     bool is_read;
     std::vector<uint64_t> kmers;
@@ -23,7 +24,7 @@ struct SketchedSeq{
     // for phasing
     int assignment;
     bool locked;
-    SketchedSeq(std::string n, bool r) : name(n), is_read(r), num_tried(0), assignment(-1), locked(false) {}
+    SketchedSeq(std::string n, bool r) : name(n), orig_name(n), is_read(r), num_tried(0), assignment(-1), locked(false) {}
 };
 
 

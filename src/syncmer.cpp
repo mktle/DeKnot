@@ -28,6 +28,7 @@ SketchedSeq* syncmer::split_sequence(SketchedSeq* init_seq, size_t idx_first, si
     assert(idx_first > 0);
     assert(idx_second < init_seq->kmers.size() - 2);
     SketchedSeq* new_seq = new SketchedSeq(init_seq->name + "2", init_seq->is_read);
+    new_seq->orig_name = init_seq->orig_name;
     init_seq->name = init_seq->name + "1";
     new_seq->assignment = init_seq->assignment;
     new_seq->num_tried = init_seq->num_tried;

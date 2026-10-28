@@ -248,6 +248,7 @@ bool Graph::check_sequence(SketchedSeq* orig_seq, size_t check_k_prime, Sketched
      **************************************/
     if (to_correct.size() > 0 || in_dropped || curr_orig_idx != 0 || read_stop_idx != orig_seq->kmers.size()){
         corrected_seq = new SketchedSeq(orig_seq->name + "M", true);
+        corrected_seq->orig_name = orig_seq->orig_name;
         corrected_seq->num_tried = orig_seq->num_tried;
         bool any_corrected {false};
         for (size_t j{0}; j < to_correct.size(); j++){

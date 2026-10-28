@@ -384,3 +384,50 @@ void phase::phase_component(int comp_num, std::vector<std::string>& phased_walks
         phase::get_haplotype_sequences(prev_graph, phased_walks, comp_num);
     }
 }
+
+void phase::assign_reads_by_syncmers(Graph* graph, std::vector<SketchedSeq*>& reads, const std::vector<uint64_t>& neutral, bool verbose){
+    const uint8_t IN_HAP1 = 1, IN_HAP2 = 2, IN_HOM = 4;
+    ankerl::unordered_dense::map<uint64_t, uint8_t> where;
+    const std::vector<Unitig*> utgs = graph->view_unitigs();
+    for (size_t i{0}; i < utgs.size(); i++){
+        Unitig* utg = utgs[i];
+        if (utg == NULL) continue;
+        int a = utg->get_assignment();
+        uint8_t bit = (a == HAP1) ? IN_HAP1 : (a == HAP2) ? IN_HAP2 : IN_HOM;
+        for (int n{0}; n < utg->num_nodes(); n++){
+            Node* node = utg->node_at((size_t)n);
+            int nk = node->num_kmers();
+            if (n == 0){
+                for (int k{0}; k < nk; k++) where[node->ith_kmer(k)] |= bit;
+            }else{
+                where[node->ith_kmer(0)] |= bit;
+                where[node->ith_kmer(nk - 1)] |= bit;
+            }
+        }
+    }
+    for (uint64_t k : neutral) where[k] |= IN_HOM;
+    size_t n_set {0}, n_changed {0}, n_conflict {0};
+    for (size_t i{0}; i < reads.size(); i++){
+        SketchedSeq* r = reads[i];
+        if (!r->is_read) continue;
+        int num1 {0}, num2 {0};
+        for (size_t j{0}; j < r->kmers.size(); j++){
+            auto it = where.find(r->kmers[j]);
+            if (it == where.end()) continue;
+            if (it->second == IN_HAP1) num1++;
+            else if (it->second == IN_HAP2) num2++;
+        }
+        int winner = 0;
+        if (num1 >= 2 && num1 > 2 * num2) winner = HAP1;
+        else if (num2 >= 2 && num2 > 2 * num1) winner = HAP2;
+        if (winner == 0) continue;
+        if (r->assignment == HAP1 || r->assignment == HAP2){
+            if (r->assignment != winner) n_conflict++;
+            continue;
+        }
+        r->assignment = winner;
+        n_set++;
+    }
+    (void)n_changed;
+    if (verbose) std::cout << "syncmer read assignment: " << n_set << " reads newly assigned, " << n_conflict << " disagreed with the phasing vote (kept)" << std::endl;
+}

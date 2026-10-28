@@ -31,6 +31,7 @@ namespace phase{
     void build_walk(Walk& walk, Node* start_node, int hap_num);
     int lookahead_score(Node* to_add, int hap_num, int& budget);
     void phase_component(int comp_num, std::vector<std::string>& phased_walks, Graph* prev_graph, std::vector<SketchedSeq*>& corrected_seqs, bool verbose);
+    void assign_reads_by_syncmers(Graph* graph, std::vector<SketchedSeq*>& reads, const std::vector<uint64_t>& neutral, bool verbose);
 }
 
 #endif
