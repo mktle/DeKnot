@@ -1,8 +1,10 @@
 #include "hpc.h"
 #include "interval_tree.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 
@@ -45,11 +47,10 @@ void hpc::get_compressed_sequence(std::string& orig, std::string& ret, std::vect
     assert(hp_lengths.size() == ret.length());
 }
 
-void hpc::align_single_read(std::vector<uint64_t>& kmer_list, ankerl::unordered_dense::map<uint64_t, std::vector<SeqIdx>>& kmer_index, std::vector<SketchedSeq>& unitig_sketches, std::vector<int>& hp_lengths, std::vector<HPCCounts>& hpc_tallies, std::vector<int>& kmer_indices, std::vector<uint8_t>& flipped_list){
+static void find_alignments(std::vector<uint64_t>& kmer_list, ankerl::unordered_dense::map<uint64_t, std::vector<SeqIdx>>& kmer_index, std::vector<SketchedSeq>& unitig_sketches, std::vector<int>& kmer_indices, std::vector<uint8_t>& flipped_list, std::vector<AlignedSegment>& alignments){
     /*********************************************************************************************
      * Find all segments with exact match to a unitig, seeking the unitig with the longest match *
      *********************************************************************************************/
-    std::vector<AlignedSegment> alignments;
     if (kmer_list.size() < 2) return;
     // check segments for hits
     size_t i{0};
@@ -66,8 +67,8 @@ void hpc::align_single_read(std::vector<uint64_t>& kmer_list, ankerl::unordered_
 
                 // if in a repetitive region, may have both a hit both in front and behind of kmer
                 // so need to check both directions...
-                size_t num_forward = check_chain_direction(true, unitig_sketches, hit, kmer_list, i, flipped_list);
-                size_t num_backward = check_chain_direction(false,  unitig_sketches, hit, kmer_list, i, flipped_list);
+                size_t num_forward = hpc::check_chain_direction(true, unitig_sketches, hit, kmer_list, i, flipped_list);
+                size_t num_backward = hpc::check_chain_direction(false,  unitig_sketches, hit, kmer_list, i, flipped_list);
 
                 bool use_forward = num_forward > num_backward;
                 size_t match_len = use_forward ? num_forward : num_backward;
@@ -99,6 +100,11 @@ void hpc::align_single_read(std::vector<uint64_t>& kmer_list, ankerl::unordered_
             i++;
         }
     }
+}
+
+void hpc::align_single_read(std::vector<uint64_t>& kmer_list, ankerl::unordered_dense::map<uint64_t, std::vector<SeqIdx>>& kmer_index, std::vector<SketchedSeq>& unitig_sketches, std::vector<int>& hp_lengths, std::vector<HPCCounts>& hpc_tallies, std::vector<int>& kmer_indices, std::vector<uint8_t>& flipped_list){
+    std::vector<AlignedSegment> alignments;
+    find_alignments(kmer_list, kmer_index, unitig_sketches, kmer_indices, flipped_list, alignments);
     /*************************************************************************
      * Only add matches to tally for the unitig with the longest exact match *
      *************************************************************************/
@@ -119,6 +125,54 @@ void hpc::align_single_read(std::vector<uint64_t>& kmer_list, ankerl::unordered_
         }
     }
     IntervalTree::destroy_tree(query_intervals);
+}
+
+void hpc::collect_all_chains(std::vector<uint64_t>& kmer_list, ankerl::unordered_dense::map<uint64_t, std::vector<SeqIdx>>& kmer_index, std::vector<SketchedSeq>& unitig_sketches, std::vector<int>& kmer_indices, std::vector<uint8_t>& flipped_list, std::vector<ChainHit>& hits){
+    if (kmer_list.size() < 2) return;
+    std::vector<ChainHit> raw;
+    ankerl::unordered_dense::map<int, size_t> skip_until;
+    for (size_t i{0}; i + 1 < kmer_list.size(); i++){
+        auto it = kmer_index.find(kmer_list[i]);
+        if (it == kmer_index.end()) continue;
+        for (size_t j{0}; j < it->second.size(); j++){
+            SeqIdx hit = it->second[j];
+            auto sk = skip_until.find(hit.seq_num);
+            if (sk != skip_until.end() && i < sk->second) continue;
+            size_t num_forward = hpc::check_chain_direction(true, unitig_sketches, hit, kmer_list, i, flipped_list);
+            size_t num_backward = hpc::check_chain_direction(false, unitig_sketches, hit, kmer_list, i, flipped_list);
+            bool use_forward = num_forward > num_backward;
+            size_t match_len = use_forward ? num_forward : num_backward;
+            if (match_len <= 30) continue;
+            int len = kmer_indices[i + match_len - 1] + KMER_SIZE - kmer_indices[i];
+            if (len < 150) continue;
+            int start = use_forward ? hit.seq_pos : hit.seq_pos + KMER_SIZE - len;
+            raw.emplace_back(hit.seq_num, start, len, kmer_indices[i], use_forward);
+            size_t until = i + match_len;
+            if (sk == skip_until.end()) skip_until[hit.seq_num] = until;
+            else if (until > sk->second) sk->second = until;
+        }
+    }
+    const int MAX_GAP = 100;
+    const int MAX_DIAG_DIFF = 20;
+    std::sort(raw.begin(), raw.end(), [](const ChainHit& x, const ChainHit& y){
+        if (x.utg_num != y.utg_num) return x.utg_num < y.utg_num;
+        if (x.forward != y.forward) return x.forward;
+        return x.start < y.start;
+    });
+    for (size_t i{0}; i < raw.size(); i++){
+        ChainHit cur = raw[i];
+        while (i + 1 < raw.size() && raw[i + 1].utg_num == cur.utg_num && raw[i + 1].forward == cur.forward){
+            const ChainHit& nxt = raw[i + 1];
+            int gap_t = nxt.start - (cur.start + cur.len);
+            int gap_r = cur.forward ? nxt.read_start - (cur.read_start + cur.len) : cur.read_start - (nxt.read_start + nxt.len);
+            if (gap_t < -MAX_DIAG_DIFF || gap_t > MAX_GAP || gap_r < -MAX_DIAG_DIFF || gap_r > MAX_GAP || std::abs(gap_t - gap_r) > MAX_DIAG_DIFF) break;
+            int new_end = nxt.start + nxt.len;
+            if (!cur.forward) cur.read_start = nxt.read_start;
+            cur.len = new_end - cur.start;
+            i++;
+        }
+        hits.push_back(cur);
+    }
 }
 
 // return number of matching kmers

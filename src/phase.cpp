@@ -3,6 +3,9 @@
 #include <cassert>
 #include <iostream>
 #include <unordered_set>
+#include <cstdlib>
+#include <cmath>
+#include <algorithm>
 
 void phase::initialize_unitigs_for_tagging(Graph* graph, std::vector<SketchedSeq*>& reads, std::vector<Unitig*>& sorted_unitigs, int comp_num){
     graph->update_median_coverage();
@@ -204,6 +207,11 @@ bool phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_
         }
         Walk best_walk(NULL, 0);
         phase::build_walk(best_walk, start_node, hap_num);
+        if (getenv("DK_THREAD_DUMP")){
+            std::cout << "WALKPATH hap" << hap_num << ":";
+            for (Unitig* u : best_walk.utgs) std::cout << " utg" << u->get_id();
+            std::cout << std::endl;
+        }
         if (walked != NULL) walked->insert(walked->end(), best_walk.utgs.begin(), best_walk.utgs.end());
 
         std::string walk_seq;
@@ -240,6 +248,210 @@ bool phase::get_haplotype_sequences(Graph* graph, std::vector<std::string>& ret_
     return true;
 }
 
+
+namespace {
+    const size_t THREAD_W = 16;
+    const int THREAD_MIN_RUN = 3;
+    const size_t THREAD_MAX_SUFFIX = 8;
+    const int THREAD_MIN_READS = 2;
+    const double THREAD_MIN_FRAC = 0.2;
+    const int THREAD_SIG_DEPTH = 4;
+    const double THREAD_REVISIT_FRAC = 0.1;
+    const double THREAD_DETECT_FRAC = 0.3;
+    struct ThreadData{
+        bool active {false};
+        std::vector<std::vector<int>> paths;
+        ankerl::unordered_dense::set<int> placeable;
+    };
+    thread_local ThreadData g_threads;
+    thread_local int g_sketch_s {0};
+
+    uint64_t mix64(uint64_t x){
+        x += 0x9e3779b97f4a7c15ULL;
+        x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+        x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+        return x ^ (x >> 31);
+    }
+    uint64_t window_hash(const uint64_t* k, size_t w){
+        uint64_t f {0}, r {0};
+        for (size_t i{0}; i < w; i++){
+            f = mix64(f ^ k[i]);
+            r = mix64(r ^ k[w - 1 - i]);
+        }
+        return f < r ? f : r;
+    }
+}
+
+void phase::set_sketch_s(int s){ g_sketch_s = s; }
+
+static void build_threads(Graph* graph, std::vector<SketchedSeq*>& reads, int comp_num, bool verbose){
+    g_threads.paths.clear();
+    g_threads.active = false;
+    if (g_sketch_s <= 0 || getenv("DK_NO_THREAD") != NULL) return;
+    ankerl::unordered_dense::map<uint64_t, int> owner;
+    const std::vector<Unitig*> utgs = graph->view_unitigs();
+    for (Unitig* u : utgs){
+        if (u == NULL || u->get_component() != comp_num) continue;
+        std::string seq;
+        u->get_hpc_sequence(seq, false, false);
+        std::vector<uint64_t> kmers; std::vector<uint8_t> flipped; std::vector<int> uniq, idx;
+        syncmer::get_all_syncmers(seq, g_sketch_s, kmers, flipped, uniq, idx);
+        if (kmers.size() < THREAD_W) continue;
+        for (size_t j{0}; j + THREAD_W <= kmers.size(); j++){
+            uint64_t h = window_hash(kmers.data() + j, THREAD_W);
+            auto it = owner.find(h);
+            if (it == owner.end()) owner.emplace(h, u->get_id());
+            else it->second = -1;
+        }
+    }
+    g_threads.placeable.clear();
+    {
+        ankerl::unordered_dense::map<int, int> n_unique;
+        for (auto& kv : owner) if (kv.second >= 0) n_unique[kv.second]++;
+        for (auto& kv : n_unique) if (kv.second >= THREAD_MIN_RUN) g_threads.placeable.insert(kv.first);
+    }
+    size_t n_multi {0};
+    for (SketchedSeq* r : reads){
+        if (!r->is_read || r->kmers.size() < THREAD_W) continue;
+        std::vector<std::pair<int,int>> runs;
+        for (size_t j{0}; j + THREAD_W <= r->kmers.size(); j++){
+            auto it = owner.find(window_hash(r->kmers.data() + j, THREAD_W));
+            if (it == owner.end() || it->second < 0) continue;
+            if (!runs.empty() && runs.back().first == it->second) runs.back().second++;
+            else runs.emplace_back(it->second, 1);
+        }
+        std::vector<int> path;
+        for (auto& run : runs){
+            if (run.second < THREAD_MIN_RUN) continue;
+            if (path.empty() || path.back() != run.first) path.push_back(run.first);
+        }
+        if (!path.empty()) g_threads.paths.push_back(std::move(path));
+    }
+    ankerl::unordered_dense::map<int, int> n_reg, n_revisit;
+    for (auto& p : g_threads.paths){
+        ankerl::unordered_dense::map<int, int> seen;
+        for (int x : p) seen[x]++;
+        for (auto& kv : seen){ n_reg[kv.first]++; if (kv.second > 1) n_revisit[kv.first]++; }
+    }
+    ankerl::unordered_dense::set<int> detectable;
+    for (Unitig* u : utgs){
+        if (u == NULL || u->get_component() != comp_num || !g_threads.placeable.count(u->get_id())) continue;
+        double need = std::max((double)THREAD_MIN_READS, THREAD_DETECT_FRAC * u->get_median_freq());
+        int reg = n_reg[u->get_id()], rev = n_revisit[u->get_id()];
+        bool repeat = rev >= THREAD_MIN_READS && rev >= THREAD_REVISIT_FRAC * reg;
+        if (reg >= need && !repeat) detectable.insert(u->get_id());
+        if (getenv("DK_THREAD_DUMP")) std::cout << "TDETECT utg" << u->get_id() << " MF=" << u->get_median_freq() << " reads=" << reg << " revisits=" << rev << (detectable.count(u->get_id()) ? "" : " excluded") << std::endl;
+    }
+    g_threads.placeable = detectable;
+    std::vector<std::vector<int>> kept;
+    for (auto& p : g_threads.paths){
+        std::vector<int> q;
+        for (int x : p) if (detectable.count(x) && (q.empty() || q.back() != x)) q.push_back(x);
+        if (q.size() >= 2){ kept.push_back(std::move(q)); n_multi++; }
+    }
+    g_threads.paths.swap(kept);
+    g_threads.active = true;
+    if (verbose) std::cout << "(" << comp_num << ") read threading: " << owner.size() << " placement windows, " << n_multi << " reads span >= 2 unitigs" << std::endl;
+    if (getenv("DK_THREAD_DUMP")){
+        for (auto& p : g_threads.paths){
+            std::cout << "TPATH";
+            for (int x : p) std::cout << " " << x;
+            std::cout << std::endl;
+        }
+    }
+}
+
+static int thread_support(const std::vector<int>& prefix, const ankerl::unordered_dense::set<int>& nexts){
+    int n {0};
+    size_t len = prefix.size() + 1;
+    for (const std::vector<int>& p : g_threads.paths){
+        if (p.size() < len) continue;
+        bool found {false};
+        for (size_t s{0}; s + len <= p.size() && !found; s++){
+            bool fw {nexts.count(p[s + len - 1]) > 0}, rv {nexts.count(p[s]) > 0};
+            for (size_t i{0}; i < prefix.size() && (fw || rv); i++){
+                if (p[s + i] != prefix[i]) fw = false;
+                if (p[s + len - 1 - i] != prefix[i]) rv = false;
+            }
+            found = fw || rv;
+        }
+        if (found) n++;
+    }
+    return n;
+}
+
+static void thread_signature(Node* n, int depth, ankerl::unordered_dense::set<int>& sig){
+    Unitig* u = n->get_unitig();
+    if (g_threads.placeable.count(u->get_id())){ sig.insert(u->get_id()); return; }
+    if (depth <= 0) return;
+    Node* opp = u->opposite_end(n);
+    for (const Edge& e : opp->view_neighbors()){
+        if (e.neighbor->get_unitig() == u) continue;
+        thread_signature(e.neighbor, depth - 1, sig);
+    }
+}
+
+static bool thread_filter(const Walk& walk, std::vector<Node*>& hap_neighs, std::vector<Node*>& other_neighs){
+    if (!g_threads.active || walk.utgs.empty()) return false;
+    std::vector<Node*> live;
+    for (std::vector<Node*>* v : {&hap_neighs, &other_neighs}){
+        for (Node* n : *v){
+            Unitig* u = n->get_unitig();
+            if (u->get_times_walked() < u->get_walk_limit()) live.push_back(n);
+        }
+    }
+    if (live.size() < 2) return false;
+    std::vector<ankerl::unordered_dense::set<int>> sigs(live.size());
+    for (size_t c{0}; c < live.size(); c++) thread_signature(live[c], THREAD_SIG_DEPTH, sigs[c]);
+    std::vector<int> placed;
+    for (size_t i{walk.utgs.size()}; i-- > 0 && placed.size() < THREAD_MAX_SUFFIX; ){
+        int id = walk.utgs[i]->get_id();
+        if (g_threads.placeable.count(id) && (placed.empty() || placed.back() != id)) placed.push_back(id);
+    }
+    std::reverse(placed.begin(), placed.end());
+    if (placed.empty()) return false;
+    for (size_t m{placed.size()}; m >= 1; m--){
+        std::vector<int> prefix(placed.end() - (long)m, placed.end());
+        std::vector<int> sup(live.size());
+        int total {0}, best {0};
+        for (size_t c{0}; c < live.size(); c++){
+            ankerl::unordered_dense::set<int> nexts;
+            for (int x : sigs[c]) if (x != prefix.back()) nexts.insert(x);
+            sup[c] = nexts.empty() ? 0 : thread_support(prefix, nexts);
+            total += sup[c];
+            best = std::max(best, sup[c]);
+        }
+        if (total < THREAD_MIN_READS) continue;
+        {
+            bool overlap {false};
+            for (size_t a{0}; a < live.size() && !overlap; a++)
+                for (size_t b{a + 1}; b < live.size() && !overlap; b++)
+                    for (int x : sigs[a]) if (sigs[b].count(x)) { overlap = true; break; }
+            if (overlap) return false;
+        }
+        int keep_min = std::max(1, (int)std::ceil(THREAD_MIN_FRAC * best));
+        ankerl::unordered_dense::set<Node*> allowed;
+        for (size_t c{0}; c < live.size(); c++) if (sup[c] >= keep_min) allowed.insert(live[c]);
+        if (allowed.size() == live.size()) return false;
+        auto keep = [&](std::vector<Node*>& v){
+            std::vector<Node*> out;
+            for (Node* n : v) if (allowed.count(n)) out.push_back(n);
+            v.swap(out);
+        };
+        keep(hap_neighs);
+        keep(other_neighs);
+        if (getenv("DK_THREAD_DUMP")){
+            std::cout << "TCHOICE at utg" << walk.utgs.back()->get_id() << " suffix";
+            for (int x : prefix) std::cout << " " << x;
+            std::cout << " :";
+            for (size_t c{0}; c < live.size(); c++) std::cout << " utg" << live[c]->get_unitig()->get_id() << "=" << sup[c] << (allowed.count(live[c]) ? "" : "(x)");
+            std::cout << std::endl;
+        }
+        return true;
+    }
+    return false;
+}
+
 void phase::build_walk(Walk& walk, Node* start_node, int hap_num){
     int other_hap_num = (hap_num == HAP1) ? HAP2 : HAP1;
     Node* curr = start_node;
@@ -266,6 +478,7 @@ void phase::build_walk(Walk& walk, Node* start_node, int hap_num){
                 if(neigh_utg->get_assignment() == other_hap_num) other_neighs.push_back(neigh);
             }
         }
+        thread_filter(walk, hap_neighs, other_neighs);
         // prioritize paths that are this haplotype or homozygous, then other if needed
         std::vector<Node*>* choices = NULL;
 
@@ -330,6 +543,8 @@ int phase::lookahead_score(Node* to_add, int hap_num, int& budget){
     return hap_weight + best_ext;
 }
 
+
+
 void phase::phase_component(int comp_num, std::vector<std::string>& phased_walks, Graph* prev_graph, std::vector<SketchedSeq*>& corrected_seqs, bool verbose){
     // this will be filled by next function call
     std::vector<Unitig*> utg_list;
@@ -347,7 +562,10 @@ void phase::phase_component(int comp_num, std::vector<std::string>& phased_walks
             for (size_t i{0}; i < utg_list.size(); i++) utg_list[i]->set_assignment(HOM);
             std::vector<std::string> path_seqs;
             std::vector<Unitig*> walked;
-            if (phase::get_haplotype_sequences(prev_graph, path_seqs, comp_num, &walked) && !path_seqs.empty()){
+            build_threads(prev_graph, corrected_seqs, comp_num, verbose);
+            bool got = phase::get_haplotype_sequences(prev_graph, path_seqs, comp_num, &walked);
+            g_threads.active = false; g_threads.paths.clear();
+            if (got && !path_seqs.empty()){
                 phased_walks.emplace_back(path_seqs[0]);
             }
             std::unordered_set<Unitig*> visited(walked.begin(), walked.end());
@@ -381,7 +599,9 @@ void phase::phase_component(int comp_num, std::vector<std::string>& phased_walks
             round++;
         }
         if (verbose) std::cout << "(" << comp_num << ") Phasing assignments complete" << std::endl;
+        build_threads(prev_graph, corrected_seqs, comp_num, verbose);
         phase::get_haplotype_sequences(prev_graph, phased_walks, comp_num);
+        g_threads.active = false; g_threads.paths.clear();
     }
 }
 

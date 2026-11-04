@@ -1,12 +1,14 @@
 #include "deknot.h"
 #include "graph.h"
 #include "hash.h"
+#include "hpc.h"
 #include "io.h"
 #include "phase.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -20,6 +22,7 @@ int DEBUG_IDX = 0;
 typedef ankerl::unordered_dense::set<size_t> IdxSet;
 static int prepare_iteration(int k_prime, int max_k_prime, std::vector<SketchedSeq*>& input_sequences, Graph* prev_graph, IdxSet& remove_set);
 static void build_graph(std::vector<SketchedSeq*>& input_sequences, const IdxSet& base_remove, Graph* prev_graph, Graph* dbg, IdxSet& remove_set);
+static void trim_walk_ends(dk_opt_t* opt, std::vector<std::string>& reads, std::vector<std::string>& walks);
 static void retire_sequences(std::vector<SketchedSeq*>& input_sequences, const IdxSet& remove_set, std::vector<SketchedSeq*>& prev_seqs);
 static bool graph_collapsed(Graph* curr_graph, Graph* prev_graph);
 
@@ -82,6 +85,104 @@ static void syncmers_without_counterpart(Unitig* a, Unitig* b, int s, std::vecto
     long margin = 200;
     for (size_t i{0}; i < ka.size(); i++){
         if ((long)i < lo - margin || (long)i > hi + margin) neutral.push_back(ka[i]);
+    }
+}
+
+static long env_long(const char* name, long dflt){
+    const char* v = getenv(name);
+    return (v == NULL) ? dflt : atol(v);
+}
+
+static void trim_walk_ends(dk_opt_t* opt, std::vector<std::string>& reads, std::vector<std::string>& walks){
+    if (env_long("DK_END_TRIM", 1) == 0) return;
+    const long W = env_long("DK_END_TRIM_W", 300);
+    const long MIN = env_long("DK_END_TRIM_MIN", 2);
+    const long MAXLEN = env_long("DK_END_TRIM_MAXLEN", 20000);
+    if (walks.empty()) return;
+
+    ankerl::unordered_dense::map<uint64_t, std::vector<SeqIdx>> kmer_index;
+    std::vector<SketchedSeq> walk_sketches;
+    for (size_t i{0}; i < walks.size(); i++){
+        SketchedSeq curr_seq = SketchedSeq("walk" + std::to_string(i), false);
+        if (walks[i].size() > 0){
+            std::vector<int> indices;
+            syncmer::get_all_syncmers(walks[i], opt->s, curr_seq.kmers, curr_seq.flipped, curr_seq.unique_seq_len, indices);
+            for (size_t j{0}; j < curr_seq.kmers.size(); j++){
+                kmer_index[curr_seq.kmers[j]].emplace_back((int)i, indices[j], curr_seq.flipped[j], (int)j);
+            }
+        }
+        walk_sketches.emplace_back(curr_seq);
+    }
+
+    std::vector<std::vector<int>> front_diff, back_diff;
+    for (size_t i{0}; i < walks.size(); i++){
+        front_diff.emplace_back(walks[i].size() + 1, 0);
+        back_diff.emplace_back(walks[i].size() + 1, 0);
+    }
+    for (size_t i{0}; i < reads.size(); i++){
+        std::string hpc_seq;
+        std::vector<int> hp_lengths;
+        hpc::get_compressed_sequence(reads[i], hpc_seq, hp_lengths);
+        std::vector<uint64_t> kmer_list;
+        std::vector<uint8_t> flipped_list;
+        std::vector<int> unique_seq_len;
+        std::vector<int> indices;
+        syncmer::get_all_syncmers(hpc_seq, opt->s, kmer_list, flipped_list, unique_seq_len, indices);
+        std::vector<ChainHit> hits;
+        hpc::collect_all_chains(kmer_list, kmer_index, walk_sketches, indices, flipped_list, hits);
+        for (const ChainHit& h : hits){
+            long L = (long)walks[(size_t)h.utg_num].size();
+            long a = std::max<long>(0, h.start);
+            long b = std::min<long>(L, (long)h.start + h.len);
+            if (b <= a) continue;
+            long fa = (a == 0) ? a : std::min(b, a + W);
+            front_diff[(size_t)h.utg_num][(size_t)fa]++;
+            front_diff[(size_t)h.utg_num][(size_t)b]--;
+            long bb = (b == L) ? b : std::max(a, b - W);
+            back_diff[(size_t)h.utg_num][(size_t)a]++;
+            back_diff[(size_t)h.utg_num][(size_t)bb]--;
+        }
+    }
+
+    for (size_t i{0}; i < walks.size(); i++){
+        long L = (long)walks[i].size();
+        if (L < 2 * W + 2) continue;
+        std::vector<int> front(walks[i].size(), 0), back(walks[i].size(), 0);
+        int cf {0}, cb {0};
+        for (long p{0}; p < L; p++){
+            cf += front_diff[i][(size_t)p]; front[(size_t)p] = cf;
+            cb += back_diff[i][(size_t)p]; back[(size_t)p] = cb;
+        }
+        long mid = L / 2;
+        if (getenv("DK_END_TRIM_DUMP") != NULL){
+            for (long p{0}; p < L; p += 25) std::cout << "[trim_dump] walk " << i << " pos " << p << " front " << front[(size_t)p] << " back " << back[(size_t)p] << std::endl;
+        }
+        long cut_front {0};
+        for (long p{mid}; p >= 0; p--){
+            if (front[(size_t)p] < MIN){
+                cut_front = std::max<long>(0, p + 1 - W);
+                break;
+            }
+        }
+        long cut_back {L};
+        for (long p{mid}; p < L; p++){
+            if (back[(size_t)p] < MIN){
+                cut_back = std::min<long>(L, p + W);
+                break;
+            }
+        }
+        if (cut_front > MAXLEN){
+            if (opt->verbose) std::cout << "[trim_walk_ends] walk " << i << ": unsupported from " << cut_front << " bases inside the start, not trimming" << std::endl;
+            cut_front = 0;
+        }
+        if (L - cut_back > MAXLEN){
+            if (opt->verbose) std::cout << "[trim_walk_ends] walk " << i << ": unsupported from " << (L - cut_back) << " bases inside the end, not trimming" << std::endl;
+            cut_back = L;
+        }
+        if (cut_front > 0 || cut_back < L){
+            if (opt->verbose) std::cout << "[trim_walk_ends] walk " << i << " (" << L << " bp): trimming " << cut_front << " from the start and " << (L - cut_back) << " from the end" << std::endl;
+            walks[i] = walks[i].substr((size_t)cut_front, (size_t)(cut_back - cut_front));
+        }
     }
 }
 
@@ -218,6 +319,7 @@ static dk_graph_t* dk_assemble_core(dk_opt_t* opt, char** reads_arr, char** read
 
     std::unordered_map<std::string, int> name_to_assignment;
     std::vector<uint64_t> neutral_syncmers;
+    phase::set_sketch_s(opt->s);
     if(prev_graph->num_unitigs() > 2){
         phase::phase_component(prev_graph->get_largest_component(), phased_walks, prev_graph, corrected_seqs, opt->verbose);
         if (prev_graph->num_components() > 1){
@@ -257,17 +359,18 @@ static dk_graph_t* dk_assemble_core(dk_opt_t* opt, char** reads_arr, char** read
     char** expanded_sequences;
     std::vector<std::string> final_unitigs;
     if (prev_graph->num_unitigs() <= 2){
-        expanded_sequences = dk_expand_sequences(opt, reads_arr, n_reads, ret_graph->unitigs, ret_graph->n_unitigs);
         for (int i{0}; i < ret_graph->n_unitigs; i++){
             phased_walks.emplace_back(ret_graph->unitigs[i]);
         }
-    }else{
+    }
+    trim_walk_ends(opt, reads, phased_walks);
+    {
         std::vector<char*> c_args;
         for (auto& s : phased_walks) {
             c_args.push_back(s.data());
         }
         c_args.push_back(nullptr);
-        expanded_sequences = dk_expand_sequences(opt, reads_arr, n_reads, c_args.data(), phased_walks.size());
+        expanded_sequences = dk_expand_sequences(opt, reads_arr, n_reads, c_args.data(), (int)phased_walks.size());
     }
     for (size_t i{0}; i < phased_walks.size(); i++){
         final_unitigs.emplace_back(expanded_sequences[i]);
